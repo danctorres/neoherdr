@@ -5,15 +5,20 @@
 //! menu through `group = "<id>"` are all projected into one resolved
 //! [`KeyGroup`] list on [`Keybinds::groups`]. Input resolution, the which-key
 //! hint, and the keybind help read only that list.
+//!
+//! The built-in menus are themselves `[[keys.command]]` entries
+//! ([`DEFAULT_MENUS`]), parsed through the same path as user entries, so a
+//! user config can express any of them.
 
 use std::borrow::Cow;
+use std::sync::OnceLock;
 
 use tracing::warn;
 
 use super::{
     format_key_combo, normalize_key_combo, parse_binding_string, parse_key_combo, ActionKeybinds,
-    BindingRegistry, BindingSource, BindingTrigger, KeyCombo, Keybinds, ParsedBinding,
-    ResolvedBinding,
+    BindingRegistry, BindingSource, BindingTrigger, CommandKeybindConfig, CommandKeybindType,
+    Keybinds, ParsedBinding, ResolvedBinding,
 };
 use crate::config::Config;
 
@@ -56,19 +61,24 @@ pub(crate) struct KeyGroup {
     pub(crate) opener: ActionKeybinds,
     pub(crate) members: Vec<KeyGroupMember>,
     /// Opened by a user `type = "group"` entry. Such a menu is kept even when
-    /// it has no entries, and goes away with the custom commands.
+    /// it has no entries.
     pub(crate) user_defined: bool,
 }
 
-struct GroupSpec {
-    id: &'static str,
-    description: &'static str,
-    members: &'static [(&'static str, KeyGroupAction, &'static str)],
+/// One parsed menu member, user or built in, before [`resolve_groups`]
+/// merges them into [`KeyGroup`]s.
+pub(super) struct MenuEntry {
+    pub(super) group: String,
+    pub(super) keys: ActionKeybinds,
+    pub(super) action: KeyGroupAction,
+    pub(super) description: Cow<'static, str>,
+    pub(super) source: BindingSource,
 }
 
-/// The built-in which-key menus. Menus are named after the object they act
-/// on and share one verb vocabulary, so the same key means the same thing in
-/// every menu:
+/// The built-in which-key menus, written as `[[keys.command]]` entries: a
+/// `type = "group"` entry per menu (opened by its `keys.<id>_menu` field),
+/// then its members. Menus are named after the object they act on and share
+/// one verb vocabulary, so the same key means the same thing in every menu:
 ///
 /// - `n` new, `r` rename, `x` close/remove, `s` switch/pick
 /// - direction keys walk the item's own axis: `h`/`l` for the horizontal tab
@@ -77,118 +87,128 @@ struct GroupSpec {
 /// - agents get no per-agent keys: `n` in the agent menu opens a picker of
 ///   the agents installed on the runtime host, so no default key depends on
 ///   what is installed
-fn builtin_group_specs() -> [GroupSpec; 7] {
-    use crate::input::KeybindAction as A;
-    use KeyGroupAction::Builtin as B;
-    [
-        GroupSpec {
-            id: WORKSPACE_GROUP,
-            description: "workspace",
-            members: &[
-                ("n", B(A::NewWorkspace), "new workspace"),
-                ("r", B(A::RenameWorkspace), "rename workspace"),
-                ("x", B(A::CloseWorkspace), "close workspace"),
-                ("s", B(A::WorkspacePicker), "switch workspace"),
-                ("j", B(A::NextWorkspace), "next workspace"),
-                ("k", B(A::PreviousWorkspace), "previous workspace"),
-                ("g", B(A::ToggleGroup), "expand/collapse group"),
-            ],
-        },
-        GroupSpec {
-            id: TAB_GROUP,
-            description: "tab",
-            members: &[
-                ("n", B(A::NewTab), "new tab"),
-                ("r", B(A::RenameTab), "rename tab"),
-                ("x", B(A::CloseTab), "close tab"),
-                ("h", B(A::PreviousTab), "previous tab"),
-                ("l", B(A::NextTab), "next tab"),
-                ("H", B(A::MoveTabPrevious), "move tab left"),
-                ("L", B(A::MoveTabNext), "move tab right"),
-            ],
-        },
-        GroupSpec {
-            id: PANE_GROUP,
-            description: "pane",
-            members: &[
-                ("r", B(A::RenamePane), "rename pane"),
-                ("c", B(A::ClearPaneName), "clear pane name"),
-                ("x", B(A::ClosePane), "close pane"),
-                ("z", B(A::Zoom), "zoom pane"),
-                ("backslash", B(A::SplitVertical), "split side by side"),
-                ("minus", B(A::SplitHorizontal), "split stacked"),
-                ("s", B(A::SwapWithFocusedPane), "swap with focused pane"),
-                ("p", B(A::LastPane), "previous (last) pane"),
-                ("e", B(A::EditScrollback), "edit scrollback"),
-                // `k` follows the terminal convention for clearing (cmd+k, ctrl+k).
-                ("k", B(A::ClearPane), "clear screen and scrollback"),
-                ("y", B(A::CopyMode), "copy mode"),
-            ],
-        },
-        GroupSpec {
-            id: AGENT_GROUP,
-            description: "agent",
-            members: &[
-                ("n", B(A::NewAgentTab), "new agent tab…"),
-                ("a", B(A::OpenNotificationTarget), "jump to notification"),
-                ("j", B(A::NextAgent), "next agent"),
-                ("k", B(A::PreviousAgent), "previous agent"),
-            ],
-        },
-        GroupSpec {
-            id: GIT_GROUP,
-            description: "git",
-            members: &[
-                ("n", B(A::NewWorktree), "new worktree"),
-                ("o", B(A::OpenWorktree), "open worktree"),
-                ("x", B(A::RemoveWorktree), "remove worktree"),
-            ],
-        },
-        GroupSpec {
-            id: SYSTEM_GROUP,
-            description: "system",
-            members: &[
-                ("s", B(A::Settings), "settings"),
-                ("r", B(A::ReloadConfig), "reload config"),
-                ("b", B(A::ToggleSidebar), "toggle sidebar"),
-                ("?", B(A::Help), "keybinds"),
-                ("q", B(A::Detach), "detach"),
-            ],
-        },
-        GroupSpec {
-            id: TUI_GROUP,
-            description: "open TUI",
-            members: &[],
-        },
-    ]
+///
+/// A member's description defaults to its action's description.
+const DEFAULT_MENUS: &str = r#"
+command = [
+  { type = "group", group = "workspace", description = "workspace" },
+  { group = "workspace", key = "n", action = "new_workspace" },
+  { group = "workspace", key = "r", action = "rename_workspace" },
+  { group = "workspace", key = "x", action = "close_workspace" },
+  { group = "workspace", key = "s", action = "workspace_picker" },
+  { group = "workspace", key = "j", action = "next_workspace" },
+  { group = "workspace", key = "k", action = "previous_workspace" },
+  { group = "workspace", key = "g", action = "toggle_group" },
+
+  { type = "group", group = "tab", description = "tab" },
+  { group = "tab", key = "n", action = "new_tab" },
+  { group = "tab", key = "r", action = "rename_tab" },
+  { group = "tab", key = "x", action = "close_tab" },
+  { group = "tab", key = "h", action = "previous_tab" },
+  { group = "tab", key = "l", action = "next_tab" },
+  { group = "tab", key = "H", action = "move_tab_previous" },
+  { group = "tab", key = "L", action = "move_tab_next" },
+
+  { type = "group", group = "pane", description = "pane" },
+  { group = "pane", key = "r", action = "rename_pane" },
+  { group = "pane", key = "c", action = "clear_pane_name" },
+  { group = "pane", key = "x", action = "close_pane" },
+  { group = "pane", key = "z", action = "zoom" },
+  { group = "pane", key = "backslash", action = "split_vertical" },
+  { group = "pane", key = "minus", action = "split_horizontal" },
+  { group = "pane", key = "s", action = "swap_with_focused_pane" },
+  { group = "pane", key = "p", action = "last_pane", description = "previous (last) pane" },
+  { group = "pane", key = "e", action = "edit_scrollback" },
+  # `k` follows the terminal convention for clearing (cmd+k, ctrl+k).
+  { group = "pane", key = "k", action = "clear_pane", description = "clear screen and scrollback" },
+  { group = "pane", key = "y", action = "copy_mode" },
+
+  { type = "group", group = "agent", description = "agent" },
+  { group = "agent", key = "n", action = "new_agent_tab", description = "new agent tab…" },
+  { group = "agent", key = "a", action = "open_notification_target" },
+  { group = "agent", key = "j", action = "next_agent" },
+  { group = "agent", key = "k", action = "previous_agent" },
+
+  { type = "group", group = "git", description = "git" },
+  { group = "git", key = "n", action = "new_worktree" },
+  { group = "git", key = "o", action = "open_worktree" },
+  { group = "git", key = "x", action = "remove_worktree" },
+
+  { type = "group", group = "system", description = "system" },
+  { group = "system", key = "s", action = "settings" },
+  { group = "system", key = "r", action = "reload_config" },
+  { group = "system", key = "b", action = "toggle_sidebar" },
+  { group = "system", key = "?", action = "help" },
+  { group = "system", key = "q", action = "detach" },
+
+  { type = "group", group = "open", description = "open TUI" },
+]
+"#;
+
+/// [`DEFAULT_MENUS`] parsed once.
+pub(super) fn default_menu_entries() -> &'static [CommandKeybindConfig] {
+    #[derive(serde::Deserialize)]
+    struct Fragment {
+        command: Vec<CommandKeybindConfig>,
+    }
+    static ENTRIES: OnceLock<Vec<CommandKeybindConfig>> = OnceLock::new();
+    ENTRIES.get_or_init(|| match toml::from_str::<Fragment>(DEFAULT_MENUS) {
+        Ok(fragment) => fragment.command,
+        Err(err) => {
+            tracing::error!(%err, "built-in menu definitions do not parse");
+            Vec::new()
+        }
+    })
 }
 
-fn group_opener<'a>(keybinds: &'a Keybinds, id: &str) -> &'a ActionKeybinds {
+/// Position of a built-in menu among the default menus.
+fn builtin_group_position(id: &str) -> Option<usize> {
+    default_menu_entries()
+        .iter()
+        .filter(|entry| entry.action_type == CommandKeybindType::Group)
+        .position(|entry| entry.group.as_deref() == Some(id))
+}
+
+/// The `keys.<id>_menu` opener of a built-in menu.
+pub(super) fn builtin_group_opener<'a>(
+    keybinds: &'a Keybinds,
+    id: &str,
+) -> Option<&'a ActionKeybinds> {
     match id {
-        WORKSPACE_GROUP => &keybinds.workspace_menu,
-        TAB_GROUP => &keybinds.tab_menu,
-        PANE_GROUP => &keybinds.pane_menu,
-        AGENT_GROUP => &keybinds.agent_menu,
-        GIT_GROUP => &keybinds.git_menu,
-        SYSTEM_GROUP => &keybinds.system_menu,
-        _ => &keybinds.tui_menu,
+        WORKSPACE_GROUP => Some(&keybinds.workspace_menu),
+        TAB_GROUP => Some(&keybinds.tab_menu),
+        PANE_GROUP => Some(&keybinds.pane_menu),
+        AGENT_GROUP => Some(&keybinds.agent_menu),
+        GIT_GROUP => Some(&keybinds.git_menu),
+        SYSTEM_GROUP => Some(&keybinds.system_menu),
+        TUI_GROUP => Some(&keybinds.tui_menu),
+        _ => None,
     }
 }
 
 pub(super) fn is_builtin_group(id: &str) -> bool {
-    builtin_group_specs().iter().any(|spec| spec.id == id)
+    builtin_group_position(id).is_some()
 }
 
-/// Records the menu opened by a user `type = "group"` entry. Openers sharing
-/// an id open the same menu.
-pub(super) fn add_user_group(
+/// Records the menu opened by a `type = "group"` entry. Openers sharing an
+/// id open the same menu; a built-in menu keeps its description and lists
+/// its own opener first.
+pub(super) fn add_group(
     keybinds: &mut Keybinds,
     id: &str,
     description: Option<&str>,
     opener: ActionKeybinds,
+    source: BindingSource,
 ) {
     if let Some(group) = keybinds.groups.iter_mut().find(|group| group.id == id) {
-        group.opener.bindings.extend(opener.bindings);
+        match source {
+            BindingSource::User => group.opener.bindings.extend(opener.bindings),
+            BindingSource::Default => {
+                let user_bindings = std::mem::replace(&mut group.opener, opener).bindings;
+                group.opener.bindings.extend(user_bindings);
+                group.description = description.unwrap_or(id).to_owned();
+            }
+        }
         return;
     }
     keybinds.groups.push(KeyGroup {
@@ -196,7 +216,7 @@ pub(super) fn add_user_group(
         description: description.unwrap_or(id).to_owned(),
         opener,
         members: Vec::new(),
-        user_defined: true,
+        user_defined: source == BindingSource::User,
     });
 }
 
@@ -233,106 +253,94 @@ pub(super) fn parse_group_member_bindings(
     ActionKeybinds { bindings }
 }
 
-/// Projects the built-in menus, the user menus recorded by
-/// [`add_user_group`], and every grouped custom command into the final menu
-/// list. Built-in menus come first, then user menus in config order.
-pub(super) fn resolve_groups(keybinds: &mut Keybinds) {
-    let user_groups = std::mem::take(&mut keybinds.groups);
-    let user_member_keys: std::collections::HashSet<(&str, KeyCombo)> = keybinds
-        .custom_commands
+/// Projects the menus recorded by [`add_group`] and the parsed menu
+/// `entries` into the final menu list. Built-in menus come first, then user
+/// menus in config order. In each menu, user entries come first, then the
+/// built-in entries and bundled plugin entries whose key no user entry took.
+pub(super) fn resolve_groups(keybinds: &mut Keybinds, entries: Vec<MenuEntry>) {
+    let mut groups = std::mem::take(&mut keybinds.groups);
+    groups.sort_by_key(|group| builtin_group_position(&group.id).unwrap_or(usize::MAX));
+    let user_member_keys: std::collections::HashSet<(&str, super::KeyCombo)> = entries
         .iter()
-        .filter_map(|binding| Some((binding.group.as_deref()?, &binding.bindings)))
-        .flat_map(|(group, bindings)| {
-            bindings
-                .bindings
-                .iter()
-                .map(move |binding| (group, normalize_key_combo(binding.trigger.combo())))
-        })
-        .collect();
-    let bundled = crate::builtin_plugin_assets::default_group_members();
-    let mut groups: Vec<KeyGroup> = builtin_group_specs()
-        .into_iter()
-        .map(|spec| {
-            let members = spec
-                .members
-                .iter()
-                .copied()
-                .chain(bundled.iter().filter(|member| member.0 == spec.id).map(
-                    |&(_, key, action, description)| {
-                        (key, KeyGroupAction::PluginAction(action), description)
-                    },
-                ))
-                .filter_map(|(key, action, description)| {
-                    let key = parse_key_combo(key)?;
-                    let label = format_key_combo(key);
-                    (!user_member_keys.contains(&(spec.id, key))).then(|| KeyGroupMember {
-                        keys: ActionKeybinds {
-                            bindings: vec![ResolvedBinding {
-                                trigger: BindingTrigger::Direct(key),
-                                label: label.clone(),
-                            }],
-                        },
-                        label,
-                        action,
-                        description: Cow::Borrowed(description),
-                    })
-                })
-                .collect();
-            KeyGroup {
-                id: spec.id.to_owned(),
-                description: spec.description.to_owned(),
-                opener: group_opener(keybinds, spec.id).clone(),
-                members,
-                user_defined: false,
-            }
-        })
-        .collect();
-    for user in user_groups {
-        match groups.iter_mut().find(|group| group.id == user.id) {
-            Some(builtin) => {
-                builtin.opener.bindings.extend(user.opener.bindings);
-                builtin.user_defined = true;
-            }
-            None => groups.push(user),
-        }
-    }
-    for group in &mut groups {
-        let commands = keybinds
-            .custom_commands
-            .iter()
-            .enumerate()
-            .filter(|(_, binding)| binding.group.as_deref() == Some(group.id.as_str()))
-            .filter_map(|(index, binding)| {
-                Some(KeyGroupMember {
-                    label: binding.bindings.label()?,
-                    keys: binding.bindings.clone(),
-                    action: KeyGroupAction::Command(index),
-                    description: binding
-                        .description
-                        .clone()
-                        .map(Cow::Owned)
-                        .unwrap_or(Cow::Borrowed("custom command")),
-                })
+        .filter(|entry| entry.source == BindingSource::User)
+        .flat_map(|entry| {
+            entry.keys.bindings.iter().map(move |binding| {
+                (
+                    entry.group.as_str(),
+                    normalize_key_combo(binding.trigger.combo()),
+                )
             })
-            .collect::<Vec<_>>();
-        group.members.splice(0..0, commands);
+        })
+        .collect();
+    let bundled = crate::builtin_plugin_assets::default_group_members()
+        .iter()
+        .filter_map(|&(group, key, action, description)| {
+            let key = parse_key_combo(key)?;
+            let label = format_key_combo(key);
+            Some(MenuEntry {
+                group: group.to_owned(),
+                keys: ActionKeybinds {
+                    bindings: vec![ResolvedBinding {
+                        trigger: BindingTrigger::Direct(key),
+                        label,
+                    }],
+                },
+                action: KeyGroupAction::PluginAction(action),
+                description: Cow::Borrowed(description),
+                source: BindingSource::Default,
+            })
+        })
+        .collect::<Vec<_>>();
+    let overridden = |entry: &MenuEntry| {
+        entry.source == BindingSource::Default
+            && entry.keys.bindings.iter().any(|binding| {
+                user_member_keys.contains(&(
+                    entry.group.as_str(),
+                    normalize_key_combo(binding.trigger.combo()),
+                ))
+            })
+    };
+    let ordered = entries
+        .iter()
+        .filter(|entry| entry.source == BindingSource::User)
+        .chain(
+            entries
+                .iter()
+                .filter(|entry| entry.source == BindingSource::Default),
+        )
+        .chain(bundled.iter())
+        .filter(|entry| !overridden(entry));
+    for entry in ordered {
+        let Some(group) = groups.iter_mut().find(|group| group.id == entry.group) else {
+            continue;
+        };
+        let Some(label) = entry.keys.label() else {
+            continue;
+        };
+        group.members.push(KeyGroupMember {
+            keys: entry.keys.clone(),
+            label,
+            action: entry.action,
+            description: entry.description.clone(),
+        });
     }
     groups.retain(|group| group.user_defined || !group.members.is_empty());
     keybinds.groups = groups;
 }
 
 impl Keybinds {
-    /// Drops every custom command together with the menu entries and user
-    /// menus that came from them, leaving the built-in menus.
+    /// Drops every custom command together with the menu entries that ran
+    /// one. A user menu left with no entries goes too; built-in actions stay.
     pub(crate) fn clear_custom_commands(&mut self) {
         self.custom_commands.clear();
-        self.groups
-            .retain(|group| !group.user_defined || is_builtin_group(&group.id));
         for group in &mut self.groups {
             group
                 .members
                 .retain(|member| !matches!(member.action, KeyGroupAction::Command(_)));
         }
+        self.groups.retain(|group| {
+            !group.user_defined || is_builtin_group(&group.id) || !group.members.is_empty()
+        });
     }
 }
 
@@ -391,6 +399,130 @@ mod tests {
 
     use super::*;
     use crate::config::keybinds::CustomCommandAction;
+
+    /// Renders the resolved menus plus the which-key and help projections.
+    /// Bundled plugin members are left out: they belong to the plugin table,
+    /// not the core keymap.
+    fn menu_snapshot(keybinds: &Keybinds) -> String {
+        use std::fmt::Write;
+        let plugin_members = keybinds
+            .groups
+            .iter()
+            .flat_map(|group| group.members.iter())
+            .filter(|member| matches!(member.action, KeyGroupAction::PluginAction(_)))
+            .map(|member| (member.label.clone(), member.description.to_string()))
+            .collect::<Vec<_>>();
+        let is_plugin_entry = |label: &str, description: &str| {
+            plugin_members
+                .iter()
+                .any(|(l, d)| l == label && d == description)
+        };
+        let mut out = String::new();
+        for group in &keybinds.groups {
+            let _ = writeln!(
+                out,
+                "group {} {:?} opener={:?} user={}",
+                group.id,
+                group.description,
+                group.opener.labels(),
+                group.user_defined
+            );
+            for member in &group.members {
+                if matches!(member.action, KeyGroupAction::PluginAction(_)) {
+                    continue;
+                }
+                let _ = writeln!(
+                    out,
+                    "  {} {:?} {:?} {:?}",
+                    member.label,
+                    member.keys.labels(),
+                    member.action,
+                    member.description
+                );
+            }
+        }
+        for (key, description) in crate::input::prefix_menu_entries(keybinds) {
+            let _ = writeln!(out, "prefix {key} {description}");
+        }
+        for (title, entries) in crate::input::keybind_help_groups(
+            keybinds,
+            (KeyCode::Char('b'), KeyModifiers::CONTROL),
+            |_| true,
+        ) {
+            let _ = writeln!(out, "help {title}");
+            for (key, description) in entries {
+                if !is_plugin_entry(&key, &description) {
+                    let _ = writeln!(out, "  {key} {description}");
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn default_menus_characterization() {
+        let actual = menu_snapshot(&Config::default().keybinds());
+        let expected = include_str!("menus_default_snapshot.txt");
+        assert_eq!(actual, expected, "\n{actual}");
+    }
+
+    #[test]
+    fn user_menus_characterization() {
+        let mut config: Config = toml::from_str(
+            r#"
+[keys]
+new_tab = "prefix+c"
+
+[[keys.command]]
+key = "prefix+m"
+type = "group"
+group = "scripts"
+description = "scripts"
+
+[[keys.command]]
+key = "b"
+group = "scripts"
+command = "make build"
+description = "build"
+
+[[keys.command]]
+key = "prefix+shift+t"
+type = "group"
+group = "tab"
+
+[[keys.command]]
+key = "n"
+group = "tab"
+type = "pane"
+command = "echo custom"
+description = "custom new tab"
+
+[[keys.command]]
+key = "prefix+e"
+type = "group"
+group = "empty"
+
+[[keys.command]]
+key = "prefix+alt+g"
+command = "lazygit"
+"#,
+        )
+        .unwrap();
+        config.tuis = vec![crate::config::TuiConfig {
+            id: "yazi".into(),
+            key: "f".into(),
+            title: "yazi".into(),
+            description: None,
+            command: vec!["yazi".into()],
+            platforms: None,
+            kind: crate::config::TuiKind::Popup,
+            width: None,
+            height: None,
+        }];
+        let actual = menu_snapshot(&config.keybinds());
+        let expected = include_str!("menus_user_snapshot.txt");
+        assert_eq!(actual, expected, "\n{actual}");
+    }
 
     #[test]
     fn every_action_is_reachable_by_default() {
@@ -708,5 +840,189 @@ command = "echo two"
             .members
             .iter()
             .all(|member| !matches!(member.action, KeyGroupAction::Command(_)))));
+    }
+
+    #[test]
+    fn default_menu_fragment_parses_without_diagnostics() {
+        assert!(!default_menu_entries().is_empty());
+        assert!(Config::default().collect_diagnostics().is_empty());
+    }
+
+    #[test]
+    fn user_menu_with_builtin_members_resolves_and_is_listed_in_help() {
+        let config: Config = toml::from_str(
+            r#"
+[[keys.command]]
+key = "prefix+m"
+type = "group"
+group = "win"
+description = "windows"
+
+[[keys.command]]
+key = "v"
+group = "win"
+action = "split_vertical"
+
+[[keys.command]]
+key = "s"
+group = "win"
+action = "split_horizontal"
+description = "stack"
+
+[[keys.command]]
+key = "n"
+group = "tab"
+action = "rename_tab"
+"#,
+        )
+        .unwrap();
+        assert!(config.collect_diagnostics().is_empty());
+        let keybinds = config.keybinds();
+        let key = |ch| crate::input::TerminalKey::new(KeyCode::Char(ch), KeyModifiers::empty());
+        assert!(matches!(
+            crate::input::resolve_group_key(&keybinds, "win", &key('v')),
+            Some(crate::input::KeybindMatch::Action(
+                crate::input::KeybindAction::SplitVertical
+            ))
+        ));
+        // A user member on a built-in member's key wins.
+        assert!(matches!(
+            crate::input::resolve_group_key(&keybinds, "tab", &key('n')),
+            Some(crate::input::KeybindMatch::Action(
+                crate::input::KeybindAction::RenameTab
+            ))
+        ));
+        assert_eq!(
+            crate::input::group_entries(&keybinds, "tab")
+                .iter()
+                .filter(|(key, _)| key == "n")
+                .count(),
+            1
+        );
+        // Built-in action entries are keymap, not commands.
+        assert!(keybinds.custom_commands.is_empty());
+        let help = crate::input::keybind_help_groups(
+            &keybinds,
+            (KeyCode::Char('b'), KeyModifiers::CONTROL),
+            |_| true,
+        );
+        let win = help
+            .iter()
+            .find(|(title, _)| title == "windows menu (prefix+m)")
+            .expect("help lists the user menu");
+        assert_eq!(
+            win.1,
+            vec![
+                ("v".to_owned(), Cow::Borrowed("split side by side")),
+                ("s".to_owned(), Cow::Borrowed("stack")),
+            ]
+        );
+    }
+
+    #[test]
+    fn invalid_action_entries_are_diagnosed_and_disabled() {
+        let config: Config = toml::from_str(
+            r#"
+[[keys.command]]
+key = "v"
+group = "pane"
+action = "split_sideways"
+
+[[keys.command]]
+key = "prefix+v"
+action = "split_vertical"
+
+[[keys.command]]
+key = "v"
+group = "pane"
+action = "split_vertical"
+command = "echo"
+
+[[keys.command]]
+key = "w"
+group = "pane"
+type = "plugin_action"
+action = "split_vertical"
+"#,
+        )
+        .unwrap();
+        let diagnostics = config.collect_diagnostics();
+        for expected in [
+            "unknown action: keys.command[0].action",
+            "built-in action outside a menu: keys.command[1].action",
+            "conflicting custom command: keys.command[2]",
+            "conflicting custom command: keys.command[3]",
+        ] {
+            assert!(
+                diagnostics.iter().any(|d| d.contains(expected)),
+                "missing {expected:?} in {diagnostics:?}"
+            );
+        }
+        let keybinds = config.keybinds();
+        let pane = keybinds
+            .groups
+            .iter()
+            .find(|group| group.id == PANE_GROUP)
+            .unwrap();
+        assert!(!pane.members.iter().any(|member| member.label == "w"));
+        assert!(keybinds.custom_commands.is_empty());
+    }
+
+    /// The whole default menu layout is expressible as user config: the
+    /// built-in fragment, re-keyed under new menu ids, resolves to the same
+    /// menus.
+    #[test]
+    fn user_config_reproduces_the_default_menus() {
+        #[derive(serde::Serialize)]
+        struct Keys {
+            command: Vec<CommandKeybindConfig>,
+        }
+        #[derive(serde::Serialize)]
+        struct Fragment {
+            keys: Keys,
+        }
+        let mut openers = 0;
+        let command = default_menu_entries()
+            .iter()
+            .cloned()
+            .map(|mut entry| {
+                entry.group = entry.group.map(|id| format!("my_{id}"));
+                if entry.action_type == CommandKeybindType::Group {
+                    openers += 1;
+                    entry.key = super::super::BindingConfig::one(format!("prefix+f{openers}"));
+                }
+                entry
+            })
+            .collect();
+        let text = toml::to_string(&Fragment {
+            keys: Keys { command },
+        })
+        .unwrap();
+        let config: Config = toml::from_str(&text).unwrap();
+        assert!(config.collect_diagnostics().is_empty(), "{text}");
+        let keybinds = config.keybinds();
+        let members = |group: &KeyGroup| {
+            group
+                .members
+                .iter()
+                .filter(|member| !matches!(member.action, KeyGroupAction::PluginAction(_)))
+                .map(|member| {
+                    (
+                        member.label.clone(),
+                        member.action,
+                        member.description.clone(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        for builtin in Keybinds::default().groups {
+            let user = keybinds
+                .groups
+                .iter()
+                .find(|group| group.id == format!("my_{}", builtin.id))
+                .expect("user copy of the menu");
+            assert_eq!(user.description, builtin.description);
+            assert_eq!(members(user), members(&builtin), "{}", builtin.id);
+        }
     }
 }
