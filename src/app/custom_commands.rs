@@ -248,7 +248,16 @@ impl App {
                     geometry,
                 );
             }
-            self.spawn_popup_argv_command(argv, None, self.custom_command_env().0, geometry)
+            self.spawn_popup_argv_command(argv, None, self.custom_command_env().0, geometry)?;
+            let popup_terminal = self
+                .state
+                .popup_pane
+                .as_ref()
+                .and_then(|popup| self.state.terminals.get_mut(&popup.terminal_id));
+            if let Some(terminal) = popup_terminal {
+                terminal.hold_on_failure = Some(argv[0].clone());
+            }
+            Ok(())
         } else {
             self.spawn_popup_shell_command(
                 &binding.command,
@@ -294,7 +303,7 @@ impl App {
                 .map(str::to_string)
                 .collect()
         });
-        let (tab_idx, terminal, runtime) = self
+        let (tab_idx, mut terminal, runtime) = self
             .state
             .workspaces
             .get_mut(ws_idx)
@@ -309,6 +318,10 @@ impl App {
                 self.state.host_terminal_theme,
                 self.state.host_terminal_appearance,
             )?;
+        if binding.argv.is_some() {
+            // Configured TUIs stay open with an exit notice when they fail.
+            terminal.hold_on_failure = argv.first().cloned();
+        }
         let pane_id = self.state.workspaces[ws_idx].tabs[tab_idx].root_pane;
         self.terminal_runtimes.insert(terminal.id.clone(), runtime);
         self.state.remove_alias_shadowed_by_new_pane(pane_id);

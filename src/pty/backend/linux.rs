@@ -105,6 +105,7 @@ mod tests {
                     if let AppEvent::PaneDied {
                         pane_id,
                         exit_reason,
+                        ..
                     } = event
                     {
                         return pane_id == PaneId::from_raw(42)
