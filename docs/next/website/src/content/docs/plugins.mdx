@@ -348,11 +348,61 @@ Bind a key to an installed plugin action:
 
 ```toml
 [[keys.command]]
-key = "prefix+l"
+key = "prefix+alt+l"
 type = "plugin_action"
 command = "example.layout.apply"
 description = "apply layout"
 ```
+
+To put the action in a menu instead of on a top-level key, give it a bare key
+and a menu id, for example `key = "l"` with `group = "pane"`. See
+[Adding commands to menus](/docs/configuration/#adding-commands-to-menus).
+
+## Worktrunk
+
+The repository ships a `worktrunk` plugin under `plugins/worktrunk/` that
+drives the third-party [`wt` (worktrunk)](https://github.com/max-sixty/worktrunk)
+CLI for git-worktree workflows. It exposes four keybindable actions —
+`switch` (covers switch and create via `wt`'s own picker), `list`, `remove`,
+and `merge` — each opening a popup that runs the bare `wt` subcommand in the
+focused pane's working directory. All prompts and confirmations are
+worktrunk's own; the plugin parses no output. It never invokes Herdr's native
+`worktree` commands.
+
+Link it and check its actions:
+
+```bash
+herdr plugin link ./plugins/worktrunk
+herdr plugin action list --plugin worktrunk
+```
+
+It requires `wt` on your `PATH` and runs on Linux and macOS. Its actions
+appear in the git menu by default: press `prefix+g`, then `s` to switch or
+create a worktree, `l` to list worktrees, or `m` to merge. `esc` backs out to
+the top-level prefix menu. `remove` has no default key; add it to the git menu
+with a bare key:
+
+```toml
+[[keys.command]]
+key = "d"
+group = "git"
+type = "plugin_action"
+command = "worktrunk.remove"
+description = "worktrunk: remove"
+```
+
+A user entry on `s`, `l`, or `m` in the git menu replaces the default worktrunk
+entry on that key.
+
+## System TUIs
+
+For system-installed TUIs, use `tuis.toml` next to your `config.toml`
+(`~/.config/herdr/tuis.toml` on Linux and macOS), described in
+[Configuration](/docs/configuration/#system-tuis). Configured TUIs appear in
+the `prefix+o` menu.
+This keeps binaries and their lifecycle outside Herdr while still providing
+popup actions and which-key discovery. Use a plugin instead when the integration
+needs hooks, events, or other plugin-owned behavior.
 
 ## Link handlers
 

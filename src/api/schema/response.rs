@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::agents::AgentInfo;
+use super::agents::{AgentInfo, AgentKindInfo};
 use super::common::{ClientWindowTitleReason, NotificationShowReason};
 use super::events::EventEnvelope;
 use super::integrations::{
@@ -106,6 +106,9 @@ pub enum ResponseResult {
     },
     AgentList {
         agents: Vec<AgentInfo>,
+    },
+    AgentKinds {
+        kinds: Vec<AgentKindInfo>,
     },
     AgentView {
         active: bool,

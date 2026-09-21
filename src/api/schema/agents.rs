@@ -175,6 +175,21 @@ pub struct AgentStartParams {
     pub timeout_ms: Option<u64>,
 }
 
+/// Opens a supported agent that is installed on the runtime host in a new tab
+/// of the active workspace.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct AgentOpenTabParams {
+    pub kind: String,
+}
+
+/// A supported agent whose interactive executable resolves on the runtime
+/// host's `PATH`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct AgentKindInfo {
+    pub kind: String,
+    pub executable: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AgentPromptParams {
     pub target: String,

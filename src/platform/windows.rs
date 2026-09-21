@@ -555,6 +555,31 @@ pub(crate) fn prepare_paste_text_for_pty_platform(text: String) -> String {
     text.replace("\r\n", "\n").replace('\n', "\r\n")
 }
 
+/// A bare command name also resolves through each `PATHEXT` extension, so
+/// `claude` finds the npm `claude.cmd` shim.
+pub(crate) fn executable_path_candidates_platform(path: PathBuf) -> Vec<PathBuf> {
+    executable_path_candidates_with_pathext(path, std::env::var_os("PATHEXT").as_deref())
+}
+
+fn executable_path_candidates_with_pathext(path: PathBuf, pathext: Option<&OsStr>) -> Vec<PathBuf> {
+    let pathext = pathext
+        .map(|pathext| pathext.to_string_lossy().into_owned())
+        .unwrap_or_else(|| ".COM;.EXE;.BAT;.CMD".to_owned());
+    let mut candidates = vec![path.clone()];
+    candidates.extend(
+        pathext
+            .split(';')
+            .map(str::trim)
+            .filter(|extension| !extension.is_empty())
+            .map(|extension| {
+                let mut candidate = path.clone().into_os_string();
+                candidate.push(extension);
+                PathBuf::from(candidate)
+            }),
+    );
+    candidates
+}
+
 pub(crate) fn normalize_cwd_for_launch_platform(path: &std::path::Path) -> PathBuf {
     use std::os::windows::ffi::{OsStrExt, OsStringExt};
     use std::path::{Component, Prefix};
@@ -3401,6 +3426,43 @@ mod tests {
         }
         assert!(!super::plain_text_clipboard_format(super::CF_DIB as u32));
         assert!(!super::plain_text_clipboard_format(0xC000));
+    }
+
+    #[test]
+    fn executable_lookup_resolves_bare_names_through_pathext() {
+        let candidates = super::executable_path_candidates_with_pathext(
+            std::path::PathBuf::from(r"C:\bin\claude"),
+            Some(std::ffi::OsStr::new(".EXE; .CMD;")),
+        );
+        assert_eq!(
+            candidates,
+            [
+                std::path::PathBuf::from(r"C:\bin\claude"),
+                std::path::PathBuf::from(r"C:\bin\claude.EXE"),
+                std::path::PathBuf::from(r"C:\bin\claude.CMD"),
+            ]
+        );
+
+        let dir = std::env::temp_dir().join(format!(
+            "herdr-pathext-lookup-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_nanos())
+                .unwrap_or_default()
+        ));
+        fs::create_dir_all(&dir).expect("create lookup dir");
+        fs::write(dir.join("claude.cmd"), "").expect("write shim");
+        let search_path = std::env::join_paths([&dir]).expect("join search path");
+        assert!(super::super::executable_on_search_path(
+            "claude",
+            Some(&search_path)
+        ));
+        assert!(!super::super::executable_on_search_path(
+            "codex",
+            Some(&search_path)
+        ));
+        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

@@ -8,6 +8,14 @@ use super::Config;
 use crate::input::TerminalKey;
 use crate::popup_size::PopupSize;
 
+mod menus;
+
+use self::menus::{
+    add_user_group, group_is_defined, parse_group_member_bindings, report_shadowed_menu_openers,
+    resolve_groups, TUI_GROUP,
+};
+pub(crate) use self::menus::{KeyGroup, KeyGroupAction, WORKSPACE_GROUP};
+
 pub type KeyCombo = (KeyCode, KeyModifiers);
 
 /// Built-in prefix used when `keys.prefix` is unset or invalid.
@@ -115,7 +123,9 @@ pub enum CommandKeybindType {
     Shell,
     Pane,
     Popup,
+    Tab,
     PluginAction,
+    Group,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -134,6 +144,12 @@ pub struct CommandKeybindConfig {
     pub width: Option<PopupSize>,
     /// Optional popup height as cells or a percentage string when type = "popup".
     pub height: Option<PopupSize>,
+    /// Menu id opened by a `type = "group"` entry, or joined by any other
+    /// entry. Built-in menus: workspace, tab, pane, agent, git, system, open.
+    pub group: Option<String>,
+    /// Exact argv for configured TUIs; never read from or written to config.
+    #[serde(skip)]
+    pub(crate) argv: Option<Vec<String>>,
 }
 
 impl Default for CommandKeybindConfig {
@@ -145,6 +161,8 @@ impl Default for CommandKeybindConfig {
             description: None,
             width: None,
             height: None,
+            group: None,
+            argv: None,
         }
     }
 }
@@ -154,6 +172,7 @@ pub enum CustomCommandAction {
     Shell,
     Pane,
     Popup,
+    Tab,
     PluginAction,
 }
 
@@ -330,10 +349,12 @@ pub struct CustomCommandKeybind {
     pub bindings: ActionKeybinds,
     pub label: String,
     pub command: String,
+    pub argv: Option<Vec<String>>,
     pub action: CustomCommandAction,
     pub description: Option<String>,
     pub width: Option<PopupSize>,
     pub height: Option<PopupSize>,
+    pub group: Option<String>,
 }
 
 /// Parsed keybinds for Herdr actions.
@@ -403,7 +424,18 @@ pub struct Keybinds {
     pub resize_pane_up: ActionKeybinds,
     pub resize_pane_right: ActionKeybinds,
     pub toggle_sidebar: ActionKeybinds,
+    pub toggle_group: ActionKeybinds,
+    pub clear_pane_name: ActionKeybinds,
+    pub swap_with_focused_pane: ActionKeybinds,
+    pub workspace_menu: ActionKeybinds,
+    pub tab_menu: ActionKeybinds,
+    pub pane_menu: ActionKeybinds,
+    pub agent_menu: ActionKeybinds,
+    pub git_menu: ActionKeybinds,
+    pub system_menu: ActionKeybinds,
+    pub tui_menu: ActionKeybinds,
     pub custom_commands: Vec<CustomCommandKeybind>,
+    pub(crate) groups: Vec<KeyGroup>,
 }
 
 impl Default for Keybinds {
@@ -586,7 +618,18 @@ impl Config {
             resize_pane_up: empty_action!(),
             resize_pane_right: empty_action!(),
             toggle_sidebar: empty_action!(),
+            toggle_group: empty_action!(),
+            clear_pane_name: empty_action!(),
+            swap_with_focused_pane: empty_action!(),
+            workspace_menu: empty_action!(),
+            tab_menu: empty_action!(),
+            pane_menu: empty_action!(),
+            agent_menu: empty_action!(),
+            git_menu: empty_action!(),
+            system_menu: empty_action!(),
+            tui_menu: empty_action!(),
             custom_commands: Vec::new(),
+            groups: Vec::new(),
         };
 
         macro_rules! field_source {
@@ -734,6 +777,20 @@ impl Config {
             apply_action!(keybinds.resize_pane_up, resize_pane_up, source);
             apply_action!(keybinds.resize_pane_right, resize_pane_right, source);
             apply_action!(keybinds.toggle_sidebar, toggle_sidebar, source);
+            apply_action!(keybinds.toggle_group, toggle_group, source);
+            apply_action!(keybinds.clear_pane_name, clear_pane_name, source);
+            apply_action!(
+                keybinds.swap_with_focused_pane,
+                swap_with_focused_pane,
+                source
+            );
+            apply_action!(keybinds.workspace_menu, workspace_menu, source);
+            apply_action!(keybinds.tab_menu, tab_menu, source);
+            apply_action!(keybinds.pane_menu, pane_menu, source);
+            apply_action!(keybinds.agent_menu, agent_menu, source);
+            apply_action!(keybinds.git_menu, git_menu, source);
+            apply_action!(keybinds.system_menu, system_menu, source);
+            apply_action!(keybinds.tui_menu, tui_menu, source);
 
             if source == field_source!(indexed) {
                 append_legacy_indexed_bindings(
@@ -764,14 +821,24 @@ impl Config {
 
             if source == BindingSource::User {
                 append_custom_command_bindings(
-                    self,
                     &mut keybinds,
                     &mut registry,
                     &mut diagnostics,
+                    "keys.command",
+                    &self.keys.command,
+                );
+                append_custom_command_bindings(
+                    &mut keybinds,
+                    &mut registry,
+                    &mut diagnostics,
+                    "tui",
+                    &self.tui_command_configs(),
                 );
             }
         }
 
+        report_shadowed_menu_openers(self, &keybinds, &registry, &mut diagnostics);
+        resolve_groups(&mut keybinds);
         (prefix_diag, prefix, diagnostics, keybinds)
     }
 }
@@ -798,62 +865,165 @@ fn reserve_navigate_runtime_keys(registry: &mut BindingRegistry) {
     }
 }
 
+/// Appends `[[keys.command]]`-shaped entries. `field_root` names the config
+/// array in diagnostics. A `group` on a non-opener entry joins that menu: a
+/// built-in menu id, or one opened by a `type = "group"` entry.
 fn append_custom_command_bindings(
-    config: &Config,
     keybinds: &mut Keybinds,
     registry: &mut BindingRegistry,
     diagnostics: &mut Vec<String>,
+    field_root: &str,
+    commands: &[CommandKeybindConfig],
 ) {
-    for (index, command) in config.keys.command.iter().enumerate() {
-        let key_field = format!("keys.command[{index}].key");
-        let command_field = format!("keys.command[{index}].command");
-
-        if command.command.trim().is_empty() {
-            let diag = format!("empty custom command: {command_field}; disabling custom command");
+    let user_openers: std::collections::HashSet<&str> = commands
+        .iter()
+        .filter(|command| command.action_type == CommandKeybindType::Group)
+        .filter_map(|command| command.group.as_deref())
+        .collect();
+    for (index, command) in commands.iter().enumerate() {
+        let entry = format!("{field_root}[{index}]");
+        let key_field = format!("{entry}.key");
+        let diagnostic = |diagnostics: &mut Vec<String>, diag: String| {
             warn!(message = %diag, "config diagnostic");
             diagnostics.push(diag);
+        };
+
+        let is_group_opener = command.action_type == CommandKeybindType::Group;
+        if !is_group_opener && command.command.trim().is_empty() {
+            diagnostic(
+                diagnostics,
+                format!("empty custom command: {entry}.command; disabling custom command"),
+            );
             continue;
         }
-
-        let bindings = parse_action_bindings(
-            &key_field,
-            &command.key,
-            registry,
-            diagnostics,
-            BindingSource::User,
-        );
+        if is_group_opener && command.group.is_none() {
+            diagnostic(
+                diagnostics,
+                format!("group opener missing group id: {entry}; disabling custom command"),
+            );
+            continue;
+        }
+        let member_group = command.group.as_deref().filter(|_| !is_group_opener);
+        if let Some(group) = member_group {
+            let opened = user_openers.contains(group) || group_is_defined(keybinds, group);
+            if !opened {
+                diagnostic(
+                    diagnostics,
+                    format!(
+                        "orphan keybind group: {key_field} references {group:?}; disabling binding"
+                    ),
+                );
+                continue;
+            }
+        }
+        let bindings = match member_group {
+            None => parse_action_bindings(
+                &key_field,
+                &command.key,
+                registry,
+                diagnostics,
+                BindingSource::User,
+            ),
+            Some(_) => parse_group_member_bindings(&key_field, &command.key, diagnostics),
+        };
         if bindings.bindings.is_empty() {
             continue;
+        }
+        if let Some(group) = member_group {
+            let taken = bindings.bindings.iter().any(|binding| {
+                let key = normalize_key_combo(binding.trigger.combo());
+                keybinds.custom_commands.iter().any(|existing| {
+                    existing.group.as_deref() == Some(group)
+                        && existing
+                            .bindings
+                            .bindings
+                            .iter()
+                            .any(|other| normalize_key_combo(other.trigger.combo()) == key)
+                })
+            });
+            if taken {
+                diagnostic(
+                    diagnostics,
+                    format!(
+                        "duplicate group member key: {key_field} in group {group:?}; disabling binding"
+                    ),
+                );
+                continue;
+            }
         }
 
         let action = match command.action_type {
             CommandKeybindType::Shell => CustomCommandAction::Shell,
             CommandKeybindType::Pane => CustomCommandAction::Pane,
             CommandKeybindType::Popup => CustomCommandAction::Popup,
-            CommandKeybindType::PluginAction => CustomCommandAction::PluginAction,
+            CommandKeybindType::Tab => CustomCommandAction::Tab,
+            CommandKeybindType::PluginAction | CommandKeybindType::Group => {
+                CustomCommandAction::PluginAction
+            }
         };
         let (width, height) = if action == CustomCommandAction::Popup {
             (command.width, command.height)
         } else {
             if command.width.is_some() || command.height.is_some() {
-                let diag = format!(
-                    "popup size on non-popup custom command: keys.command[{index}]; ignoring width and height"
+                diagnostic(
+                    diagnostics,
+                    format!(
+                        "popup size on non-popup custom command: {entry}; ignoring width and height"
+                    ),
                 );
-                warn!(message = %diag, "config diagnostic");
-                diagnostics.push(diag);
             }
             (None, None)
         };
+        if is_group_opener {
+            if let Some(group) = command.group.as_deref() {
+                add_user_group(keybinds, group, command.description.as_deref(), bindings);
+            }
+            continue;
+        }
         let label = bindings.label().unwrap_or_else(|| "unset".to_string());
         keybinds.custom_commands.push(CustomCommandKeybind {
             bindings,
             label,
             command: command.command.clone(),
+            argv: command.argv.clone(),
             action,
             description: command.description.clone(),
             width,
             height,
+            group: command.group.clone(),
         });
+    }
+}
+
+impl Config {
+    /// The configured TUIs as members of the `open` menu, in the same shape
+    /// as `[[keys.command]]` entries so the server keymap and the published
+    /// client keybinding profile share one representation.
+    pub(crate) fn tui_command_configs(&self) -> Vec<CommandKeybindConfig> {
+        self.tuis
+            .iter()
+            .map(|tui| {
+                let action_type = match tui.kind {
+                    super::TuiKind::Popup => CommandKeybindType::Popup,
+                    super::TuiKind::Tab => CommandKeybindType::Tab,
+                };
+                let (width, height) = if action_type == CommandKeybindType::Popup {
+                    (tui.width, tui.height)
+                } else {
+                    (None, None)
+                };
+                CommandKeybindConfig {
+                    key: BindingConfig::one(tui.key.clone()),
+                    command: format!("tui:{}", tui.id),
+                    argv: Some(tui.command.clone()),
+                    action_type,
+                    description: tui.description.clone().or_else(|| Some(tui.title.clone())),
+                    width,
+                    height,
+                    group: Some(TUI_GROUP.into()),
+                }
+            })
+            .collect()
     }
 }
 
@@ -1655,24 +1825,25 @@ next_tab = "prefix+n"
     }
 
     #[test]
-    fn new_worktree_defaults_to_prefix_shift_g() {
+    fn new_worktree_is_reached_through_the_git_menu_by_default() {
         let kb = Config::default().keybinds();
+        assert!(kb.new_worktree.bindings.is_empty());
         assert_eq!(
-            binding_triggers(&kb.new_worktree),
+            binding_triggers(&kb.git_menu),
             vec![BindingTrigger::Prefix((
                 KeyCode::Char('g'),
-                KeyModifiers::SHIFT
+                KeyModifiers::empty()
             ))]
         );
     }
 
     #[test]
-    fn goto_defaults_to_prefix_g() {
+    fn goto_defaults_to_prefix_slash() {
         let kb = Config::default().keybinds();
         assert_eq!(
             binding_triggers(&kb.goto),
             vec![BindingTrigger::Prefix((
-                KeyCode::Char('g'),
+                KeyCode::Char('/'),
                 KeyModifiers::empty()
             ))]
         );
@@ -1686,21 +1857,134 @@ next_tab = "prefix+n"
     }
 
     #[test]
-    fn copy_mode_uses_tmux_prefix_bracket_by_default() {
+    fn copy_mode_uses_vim_yank_by_default() {
         let kb = Config::default().keybinds();
         assert_eq!(
             binding_triggers(&kb.copy_mode),
             vec![BindingTrigger::Prefix((
-                KeyCode::Char('['),
+                KeyCode::Char('y'),
                 KeyModifiers::empty()
             ))]
         );
     }
 
     #[test]
-    fn back_and_forth_keybinds_are_unset_by_default() {
+    fn last_pane_defaults_to_prefix_semicolon() {
         let kb = Config::default().keybinds();
-        assert!(kb.last_pane.bindings.is_empty());
+        assert_eq!(
+            binding_triggers(&kb.last_pane),
+            vec![BindingTrigger::Prefix((
+                KeyCode::Char(';'),
+                KeyModifiers::empty()
+            ))]
+        );
+    }
+
+    #[test]
+    fn default_keybinding_table_has_no_duplicate_sequences() {
+        use std::collections::HashMap;
+
+        // Mirrors the two real collision registries: navigate-mode bindings
+        // resolve in their own namespace, everything else shares one.
+        let keybinds = Keybinds::default();
+        let mut main: HashMap<(bool, KeyCombo), &str> = HashMap::new();
+        let mut navigate: HashMap<(bool, KeyCombo), &str> = HashMap::new();
+        let check = |registry: &mut HashMap<(bool, KeyCombo), &str>,
+                     field: &'static str,
+                     trigger: BindingTrigger| {
+            let key = (trigger.is_direct(), normalize_key_combo(trigger.combo()));
+            if let Some(first) = registry.insert(key, field) {
+                panic!("default keybinding collision: {field} shadows {first}");
+            }
+        };
+        for (field, bindings) in [
+            ("help", &keybinds.help),
+            ("settings", &keybinds.settings),
+            ("new_workspace", &keybinds.new_workspace),
+            ("new_worktree", &keybinds.new_worktree),
+            ("open_worktree", &keybinds.open_worktree),
+            ("remove_worktree", &keybinds.remove_worktree),
+            ("rename_workspace", &keybinds.rename_workspace),
+            ("close_workspace", &keybinds.close_workspace),
+            ("workspace_picker", &keybinds.workspace_picker),
+            ("goto", &keybinds.goto),
+            ("detach", &keybinds.detach),
+            ("reload_config", &keybinds.reload_config),
+            (
+                "open_notification_target",
+                &keybinds.open_notification_target,
+            ),
+            ("previous_workspace", &keybinds.previous_workspace),
+            ("next_workspace", &keybinds.next_workspace),
+            ("previous_agent", &keybinds.previous_agent),
+            ("next_agent", &keybinds.next_agent),
+            ("new_tab", &keybinds.new_tab),
+            ("rename_tab", &keybinds.rename_tab),
+            ("previous_tab", &keybinds.previous_tab),
+            ("next_tab", &keybinds.next_tab),
+            ("move_tab_previous", &keybinds.move_tab_previous),
+            ("move_tab_next", &keybinds.move_tab_next),
+            ("close_tab", &keybinds.close_tab),
+            ("rename_pane", &keybinds.rename_pane),
+            ("edit_scrollback", &keybinds.edit_scrollback),
+            ("copy_mode", &keybinds.copy_mode),
+            ("focus_pane_left", &keybinds.focus_pane_left),
+            ("focus_pane_down", &keybinds.focus_pane_down),
+            ("focus_pane_up", &keybinds.focus_pane_up),
+            ("focus_pane_right", &keybinds.focus_pane_right),
+            ("swap_pane_left", &keybinds.swap_pane_left),
+            ("swap_pane_down", &keybinds.swap_pane_down),
+            ("swap_pane_up", &keybinds.swap_pane_up),
+            ("swap_pane_right", &keybinds.swap_pane_right),
+            ("cycle_pane_next", &keybinds.cycle_pane_next),
+            ("cycle_pane_previous", &keybinds.cycle_pane_previous),
+            ("last_pane", &keybinds.last_pane),
+            ("split_vertical", &keybinds.split_vertical),
+            ("split_horizontal", &keybinds.split_horizontal),
+            ("close_pane", &keybinds.close_pane),
+            ("zoom", &keybinds.zoom),
+            ("resize_mode", &keybinds.resize_mode),
+            ("resize_pane_left", &keybinds.resize_pane_left),
+            ("resize_pane_down", &keybinds.resize_pane_down),
+            ("resize_pane_up", &keybinds.resize_pane_up),
+            ("resize_pane_right", &keybinds.resize_pane_right),
+            ("toggle_sidebar", &keybinds.toggle_sidebar),
+            ("toggle_group", &keybinds.toggle_group),
+            ("clear_pane_name", &keybinds.clear_pane_name),
+            ("swap_with_focused_pane", &keybinds.swap_with_focused_pane),
+            ("workspace_menu", &keybinds.workspace_menu),
+            ("tab_menu", &keybinds.tab_menu),
+            ("pane_menu", &keybinds.pane_menu),
+            ("agent_menu", &keybinds.agent_menu),
+            ("git_menu", &keybinds.git_menu),
+            ("system_menu", &keybinds.system_menu),
+            ("tui_menu", &keybinds.tui_menu),
+        ] {
+            for binding in &bindings.bindings {
+                check(&mut main, field, binding.trigger);
+            }
+        }
+        for (field, bindings) in [
+            ("focus_agent", &keybinds.focus_agent),
+            ("switch_tab", &keybinds.switch_tab),
+            ("switch_workspace", &keybinds.switch_workspace),
+        ] {
+            for binding in bindings {
+                check(&mut main, field, binding.trigger);
+            }
+        }
+        for (field, bindings) in [
+            ("navigate_workspace_up", &keybinds.navigate.workspace_up),
+            ("navigate_workspace_down", &keybinds.navigate.workspace_down),
+            ("navigate_pane_left", &keybinds.navigate.pane_left),
+            ("navigate_pane_down", &keybinds.navigate.pane_down),
+            ("navigate_pane_up", &keybinds.navigate.pane_up),
+            ("navigate_pane_right", &keybinds.navigate.pane_right),
+        ] {
+            for binding in &bindings.bindings {
+                check(&mut navigate, field, binding.trigger);
+            }
+        }
     }
 
     #[test]
@@ -2255,14 +2539,14 @@ switch_tab = "prefix+?"
         assert_eq!(
             binding_triggers(&kb.next_tab),
             vec![BindingTrigger::Prefix((
-                KeyCode::Char('n'),
+                KeyCode::Char(']'),
                 KeyModifiers::empty()
             ))]
         );
         assert_eq!(
             binding_triggers(&kb.previous_tab),
             vec![BindingTrigger::Prefix((
-                KeyCode::Char('p'),
+                KeyCode::Char('['),
                 KeyModifiers::empty()
             ))]
         );
@@ -2353,7 +2637,7 @@ previous_workspace = "prefix+shift+l"
         let config: Config = toml::from_str(
             r#"
 [keys]
-prefix = "n"
+prefix = "x"
 "#,
         )
         .unwrap();
@@ -2362,7 +2646,7 @@ prefix = "n"
         let kb = config.keybinds();
 
         assert!(diagnostics.is_empty(), "{diagnostics:?}");
-        assert!(kb.next_tab.bindings.is_empty());
+        assert!(kb.close_pane.bindings.is_empty());
     }
 
     #[test]
@@ -2439,6 +2723,22 @@ height = "80%"
             keybinds.custom_commands[0].height,
             Some(PopupSize::Percent(80))
         );
+    }
+
+    #[test]
+    fn custom_tab_command_parses() {
+        let config: Config = toml::from_str(
+            r#"
+[[keys.command]]
+key = "prefix+n"
+command = "nvim"
+type = "tab"
+"#,
+        )
+        .unwrap();
+        let keybinds = config.keybinds();
+        assert_eq!(keybinds.custom_commands.len(), 1);
+        assert_eq!(keybinds.custom_commands[0].action, CustomCommandAction::Tab);
     }
 
     #[test]

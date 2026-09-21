@@ -220,6 +220,7 @@ impl App {
                 self.spawn_pane_command(&binding.command, Vec::new())
             }
             crate::config::CustomCommandAction::Popup => self.spawn_custom_popup_command(binding),
+            crate::config::CustomCommandAction::Tab => self.spawn_tab_command(binding),
             crate::config::CustomCommandAction::PluginAction => self
                 .invoke_plugin_action_from_keybind(binding.command.clone(), selected_text)
                 .map_err(io::Error::other),
@@ -230,15 +231,91 @@ impl App {
         &mut self,
         binding: &crate::config::CustomCommandKeybind,
     ) -> io::Result<()> {
-        self.spawn_popup_shell_command(
-            &binding.command,
-            None,
-            self.custom_command_env().0,
-            crate::app::popup::PopupGeometry {
-                width: binding.width,
-                height: binding.height,
-            },
-        )
+        let geometry = crate::app::popup::PopupGeometry {
+            width: binding.width,
+            height: binding.height,
+        };
+        if let Some(argv) = &binding.argv {
+            if !crate::platform::executable_on_path(&argv[0]) {
+                let executable = shell_quote(&argv[0]);
+                let message = format!(
+                    "printf '\\n[neoherdr] {executable} not found on PATH. Press Enter to close.\\n'; IFS= read -r _ || true"
+                );
+                return self.spawn_popup_shell_command(
+                    &message,
+                    None,
+                    self.custom_command_env().0,
+                    geometry,
+                );
+            }
+            self.spawn_popup_argv_command(argv, None, self.custom_command_env().0, geometry)
+        } else {
+            self.spawn_popup_shell_command(
+                &binding.command,
+                None,
+                self.custom_command_env().0,
+                geometry,
+            )
+        }
+    }
+
+    fn spawn_tab_command(
+        &mut self,
+        binding: &crate::config::CustomCommandKeybind,
+    ) -> std::io::Result<()> {
+        let Some(ws_idx) = self.state.active else {
+            return Err(std::io::Error::other("no active workspace"));
+        };
+        let (env, env_cwd) = self.custom_command_env();
+        let (rows, cols) = self.state.new_pane_size(crate::ui::NewPanePlacement::Alone);
+        let cwd = {
+            let ws = self
+                .state
+                .workspaces
+                .get(ws_idx)
+                .ok_or_else(|| std::io::Error::other("active workspace disappeared"))?;
+            let previous_focus = ws
+                .focused_pane_id()
+                .ok_or_else(|| std::io::Error::other("no focused pane"))?;
+            ws.active_tab()
+                .and_then(|tab| {
+                    tab.cwd_for_pane(
+                        previous_focus,
+                        &self.state.terminals,
+                        &self.terminal_runtimes,
+                    )
+                })
+                .or(env_cwd)
+        };
+        let argv = binding.argv.clone().unwrap_or_else(|| {
+            binding
+                .command
+                .split_whitespace()
+                .map(str::to_string)
+                .collect()
+        });
+        let (tab_idx, terminal, runtime) = self
+            .state
+            .workspaces
+            .get_mut(ws_idx)
+            .ok_or_else(|| std::io::Error::other("active workspace disappeared"))?
+            .create_tab_argv_command(
+                rows.max(4),
+                cols.max(10),
+                cwd.unwrap_or_default(),
+                &argv,
+                env,
+                self.state.pane_scrollback_limit_bytes,
+                self.state.host_terminal_theme,
+                self.state.host_terminal_appearance,
+            )?;
+        let pane_id = self.state.workspaces[ws_idx].tabs[tab_idx].root_pane;
+        self.terminal_runtimes.insert(terminal.id.clone(), runtime);
+        self.state.remove_alias_shadowed_by_new_pane(pane_id);
+        self.state.terminals.insert(terminal.id.clone(), terminal);
+        self.state.switch_workspace_tab(ws_idx, tab_idx);
+        self.state.mode = Mode::Terminal;
+        Ok(())
     }
 
     pub(crate) fn custom_command_env(&self) -> (Vec<(String, String)>, Option<std::path::PathBuf>) {
@@ -525,6 +602,10 @@ impl App {
     }
 }
 
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
 fn write_scrollback_temp_file(content: &str) -> io::Result<std::path::PathBuf> {
     let mut last_collision = None;
     for attempt in 0..16 {
@@ -586,10 +667,12 @@ mod tests {
             bindings: crate::config::ActionKeybinds::prefix("z"),
             label: "prefix+z".into(),
             command: "secret-command --token hidden".into(),
+            argv: None,
             action,
             description: Some("safe description".into()),
             width: None,
             height: None,
+            group: None,
         }
     }
 
@@ -611,6 +694,40 @@ mod tests {
             app.resolve_client_shell_command(&manifest[0].command_id)
                 .map(|binding| binding.command),
             Some("secret-command --token hidden".into())
+        );
+    }
+
+    #[test]
+    fn manifest_omits_group_openers_but_keeps_popup_members() {
+        let mut app = test_app();
+        let config: crate::config::Config = toml::from_str(
+            r#"
+[[keys.command]]
+key = "prefix+w"
+type = "group"
+group = "tuis"
+
+[[keys.command]]
+key = "d"
+type = "popup"
+group = "tuis"
+command = "gh-dash"
+"#,
+        )
+        .unwrap();
+        app.endpoint_commands =
+            super::EndpointCommandRegistry::new(&config.keybinds().custom_commands);
+
+        let manifest = app.client_shell_command_manifest();
+        assert_eq!(manifest.len(), 1);
+        assert_eq!(
+            manifest[0].action,
+            crate::protocol::ClientShellCommandAction::Popup
+        );
+        assert_eq!(
+            app.resolve_client_shell_command(&manifest[0].command_id)
+                .map(|binding| binding.command),
+            Some("gh-dash".into())
         );
     }
 
@@ -778,5 +895,60 @@ mod tests {
             crate::protocol::ClientShellCommandAction::Popup
         );
         assert!(!format!("{manifest:?}").contains("secret-command"));
+    }
+
+    #[test]
+    fn tab_commands_advertise_as_pane_but_resolve_and_execute_as_tab() {
+        let mut app = test_app();
+        install(&mut app, binding(crate::config::CustomCommandAction::Tab));
+
+        let manifest = app.client_shell_command_manifest();
+        assert_eq!(manifest.len(), 1);
+        assert_eq!(
+            manifest[0].action,
+            crate::protocol::ClientShellCommandAction::Pane
+        );
+        assert_eq!(
+            crate::protocol::ClientShellCommandAction::from(
+                crate::config::CustomCommandAction::Tab
+            ),
+            crate::protocol::ClientShellCommandAction::Pane
+        );
+        let resolved = app
+            .resolve_client_shell_command(&manifest[0].command_id)
+            .unwrap();
+        assert_eq!(resolved.action, crate::config::CustomCommandAction::Tab);
+    }
+
+    #[test]
+    fn tab_action_skips_popup_and_overlay_paths() {
+        let mut app = test_app();
+        app.state.popup_pane = Some(crate::app::state::PopupPaneState {
+            pane_id: crate::layout::PaneId::alloc(),
+            terminal_id: crate::terminal::TerminalId::alloc(),
+            width: None,
+            height: None,
+        });
+
+        let popup_err = app
+            .execute_custom_command_binding(
+                &binding(crate::config::CustomCommandAction::Popup),
+                None,
+            )
+            .unwrap_err();
+        assert!(
+            popup_err.to_string().contains("popup already open"),
+            "{popup_err}"
+        );
+
+        let tab_err = app
+            .execute_custom_command_binding(&binding(crate::config::CustomCommandAction::Tab), None)
+            .unwrap_err();
+        assert!(
+            tab_err.to_string().contains("no active workspace"),
+            "{tab_err}"
+        );
+        assert!(app.overlay_panes.is_empty());
+        assert_eq!(app.state.workspaces.len(), 0);
     }
 }

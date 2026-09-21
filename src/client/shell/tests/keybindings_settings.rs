@@ -325,7 +325,8 @@ fn prefix_endpoint_action_uses_public_api_with_stable_ids() {
     state.set_snapshot(Box::new(snapshot()));
 
     assert!(state.handle_input_bytes(&[0x02]).actions.is_empty());
-    let create = state.handle_input_bytes(b"c");
+    assert!(state.handle_input_bytes(b"t").actions.is_empty());
+    let create = state.handle_input_bytes(b"n");
     let [ClientShellAction::Endpoint {
         boot_id, request, ..
     }] = &create.actions[..]
@@ -476,16 +477,63 @@ new_tab = "prefix+n"
 }
 
 #[test]
+fn local_snapshot_keeps_group_openers_and_member_groups() {
+    let local: Config = toml::from_str(
+        r#"
+[[keys.command]]
+key = "prefix+shift+u"
+type = "group"
+group = "worktrunk"
+description = "worktrunk"
+
+[[keys.command]]
+key = "s"
+type = "plugin_action"
+group = "worktrunk"
+command = "worktrunk.switch"
+description = "switch"
+"#,
+    )
+    .unwrap();
+    let mut state = ClientShellState::new(
+        ClientShellConfig::from_config(&local)
+            .with_keybinding_source(ClientShellKeybindingSource::Local),
+    );
+    let mut projection = snapshot();
+    projection
+        .commands
+        .push(crate::protocol::ClientShellCommand {
+            command_id: "cmd_worktrunk_switch".into(),
+            binding_label: "s".into(),
+            binding_labels: vec!["s".into()],
+            action: crate::protocol::ClientShellCommandAction::PluginAction,
+            description: Some("switch".into()),
+        });
+    state.set_snapshot(Box::new(projection));
+
+    let keybinds = &state.config.keybinds.keybinds;
+    assert!(keybinds
+        .groups
+        .iter()
+        .any(|group| group.id == "worktrunk" && !group.opener.bindings.is_empty()));
+    assert!(keybinds.custom_commands.iter().any(|binding| {
+        binding.group.as_deref() == Some("worktrunk") && binding.command == "cmd_worktrunk_switch"
+    }));
+}
+
+#[test]
 fn custom_binding_invokes_only_the_endpoint_manifest_id() {
     let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
     let binding = crate::config::CustomCommandKeybind {
         bindings: crate::config::ActionKeybinds::prefix("z"),
         label: "prefix+z".into(),
         command: "secret-command --token hidden".into(),
+        argv: None,
         action: crate::config::CustomCommandAction::Shell,
         description: None,
         width: None,
         height: None,
+        group: None,
     };
     let mut projection = snapshot();
     projection
@@ -525,10 +573,12 @@ fn plugin_command_carries_client_owned_selection_coordinates() {
         bindings: crate::config::ActionKeybinds::prefix("p"),
         label: "prefix+p".into(),
         command: "plugin.action".into(),
+        argv: None,
         action: crate::config::CustomCommandAction::PluginAction,
         description: None,
         width: None,
         height: None,
+        group: None,
     };
     let mut projection = snapshot();
     projection
@@ -754,10 +804,12 @@ fn custom_binding_missing_from_endpoint_manifest_is_not_forwarded() {
         bindings: crate::config::ActionKeybinds::prefix("z"),
         label: "prefix+z".into(),
         command: "secret-command".into(),
+        argv: None,
         action: crate::config::CustomCommandAction::Shell,
         description: None,
         width: None,
         height: None,
+        group: None,
     };
 
     let mut outcome = ClientShellInput::default();

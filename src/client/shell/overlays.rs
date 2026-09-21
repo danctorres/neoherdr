@@ -1,5 +1,6 @@
 use super::*;
 
+mod picker_overlay;
 mod settings_overlay;
 mod worktree_overlays;
 
@@ -15,6 +16,7 @@ pub(crate) struct OverlayRender {
     pub(crate) navigator_rows: Vec<(Rect, ClientNavigatorTarget)>,
     pub(crate) navigator_scrollbar: Rect,
     pub(crate) navigator_scroll_metrics: Option<crate::pane::ScrollMetrics>,
+    pub(crate) marketplace_rows: Vec<(Rect, usize)>,
     pub(crate) worktree_search: Rect,
     pub(crate) worktree_rows: Vec<(Rect, usize)>,
     pub(crate) help_popup: Rect,
@@ -79,6 +81,7 @@ pub(crate) fn render_client_overlay(
         ClientShellOverlay::WorktreeRemove(v) => {
             worktree_overlays::render_worktree_remove_overlay(b, v, p)
         }
+        ClientShellOverlay::AgentTab(v) => picker_overlay::render_agent_tab_overlay(b, v, p),
         ClientShellOverlay::ContextMenu(_) | ClientShellOverlay::GlobalMenu(_) => None,
     }
 }
@@ -160,6 +163,74 @@ pub(crate) fn render_global_menu(
         menu_rows: rows,
         ..OverlayRender::default()
     })
+}
+
+pub(crate) fn render_key_hint(
+    buffer: &mut Buffer,
+    hint: &KeyHintState,
+    palette: &Palette,
+) -> Option<Rect> {
+    if !hint.visible || hint.bindings.is_empty() {
+        return None;
+    }
+    let screen = buffer.area;
+    // Small, content-sized, bottom-anchored advisory popup reusing the shared
+    // `panel()` primitive. Single column when it fits, otherwise two columns.
+    let max_rows = screen.height.saturating_sub(4).max(1) as usize;
+    let shown = hint.bindings.len().min(max_rows.saturating_mul(2).max(1));
+    let columns = if hint.bindings.len() > max_rows { 2 } else { 1 };
+    let rows = shown.div_ceil(columns);
+    let cell = |(key, label): &(String, std::borrow::Cow<'static, str>)| {
+        display_width(key) + 1 + display_width(label)
+    };
+    let col_width = |col: usize| {
+        (col..shown)
+            .step_by(columns)
+            .map(|index| cell(&hint.bindings[index]))
+            .max()
+            .unwrap_or(0)
+    };
+    let width = (0..columns)
+        .map(col_width)
+        .sum::<u16>()
+        .saturating_add(2 * columns as u16 + 2)
+        .max(10)
+        .min(screen.width.max(1));
+    let height = (rows as u16).saturating_add(2).min(screen.height.max(1));
+    let x = screen
+        .x
+        .saturating_add(screen.width.saturating_sub(width) / 2);
+    let y = screen
+        .y
+        .saturating_add(screen.height.saturating_sub(height + 1));
+    let rect = Rect::new(x, y, width, height);
+    let inner = panel(buffer, rect, palette.accent, palette.panel_bg)?;
+    let key_style = Style::default()
+        .fg(palette.mauve)
+        .bg(palette.panel_bg)
+        .add_modifier(Modifier::BOLD);
+    let label_style = Style::default().fg(palette.text).bg(palette.panel_bg);
+    for (position, (key, label)) in hint.bindings.iter().take(shown).enumerate() {
+        let col = position % columns;
+        let row = (position / columns) as u16;
+        let mut cell_x = inner.x;
+        for already in 0..col {
+            cell_x = cell_x.saturating_add(col_width(already) + 2);
+        }
+        let row_y = inner.y.saturating_add(row);
+        if row_y >= inner.bottom() {
+            break;
+        }
+        let cell_width = col_width(col).min(inner.right().saturating_sub(cell_x));
+        if cell_width == 0 {
+            continue;
+        }
+        put_text(buffer, cell_x, row_y, cell_width, key, key_style);
+        let label_x = cell_x.saturating_add(display_width(key) + 1);
+        let label_width = inner.right().saturating_sub(label_x);
+        put_text(buffer, label_x, row_y, label_width, label, label_style);
+    }
+    Some(rect)
 }
 
 pub(crate) fn render_context_menu(

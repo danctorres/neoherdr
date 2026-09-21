@@ -162,6 +162,30 @@ pub(crate) fn normalize_cwd_for_launch(path: &std::path::Path) -> std::path::Pat
     normalize_cwd_for_launch_platform(path)
 }
 
+/// Whether `executable` runs as a command: a path to a file, or a bare name
+/// resolving to a file in one of `PATH`'s directories.
+pub(crate) fn executable_on_path(executable: &str) -> bool {
+    executable_on_search_path(executable, std::env::var_os("PATH").as_deref())
+}
+
+fn executable_on_search_path(executable: &str, search_path: Option<&std::ffi::OsStr>) -> bool {
+    if executable.contains(std::path::MAIN_SEPARATOR) {
+        return std::path::Path::new(executable).is_file();
+    }
+    search_path.is_some_and(|search_path| {
+        std::env::split_paths(search_path).any(|dir| {
+            executable_path_candidates_platform(dir.join(executable))
+                .iter()
+                .any(|candidate| candidate.is_file())
+        })
+    })
+}
+
+#[cfg(not(windows))]
+fn executable_path_candidates_platform(path: std::path::PathBuf) -> Vec<std::path::PathBuf> {
+    vec![path]
+}
+
 #[cfg(not(windows))]
 fn normalize_cwd_for_launch_platform(path: &std::path::Path) -> std::path::PathBuf {
     path.to_path_buf()
@@ -710,6 +734,33 @@ mod tests {
         assert_eq!(live_pane_process_group(shell_pid, agent_pid, token), None);
         let _ = wrapper.kill();
         let _ = wrapper.wait();
+    }
+
+    #[test]
+    fn executable_lookup_matches_only_the_exact_name_in_search_path() {
+        let dir = std::env::temp_dir().join(format!(
+            "herdr-executable-lookup-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_nanos())
+                .unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&dir).expect("create lookup dir");
+        std::fs::write(dir.join("agent"), "").expect("write agent");
+        std::fs::write(dir.join("shim.cmd"), "").expect("write shim");
+        let search_path = std::env::join_paths([&dir]).expect("join search path");
+
+        assert!(executable_on_search_path("agent", Some(&search_path)));
+        assert!(!executable_on_search_path("shim", Some(&search_path)));
+        assert!(!executable_on_search_path("missing", Some(&search_path)));
+        assert!(!executable_on_search_path("agent", None));
+        assert!(executable_on_search_path(
+            dir.join("agent").to_str().expect("utf-8 path"),
+            None
+        ));
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

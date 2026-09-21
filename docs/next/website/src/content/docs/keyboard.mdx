@@ -1,66 +1,135 @@
 ---
 title: Keyboard
-description: What the prefix is, which bindings to learn first, and how to go prefix-free.
+description: What the prefix is, how the default keymap and menus are laid out, and how to go prefix-free.
 ---
 
 :::tip[Coming from tmux or zellij?]
-You already know this model. Jump to the [keybinding reference](/docs/configuration/#keybindings) for the full default keymap and config syntax.
+You already know this model. Skim [how the keymap is laid out](#how-the-keymap-is-laid-out), then the [top-level keys](#top-level) and [menus](#menus). The [keybinding reference](/docs/configuration/#keybindings) covers config syntax.
 :::
 
-Herdr is mouse-native. You can click panes, tabs, workspaces, and agents, drag split borders, and use right-click menus without learning a single keybinding. Keyboard control is optional.
+Herdr is keyboard-first. Press the prefix and a which-key popup shows every reachable action, so you don't need to memorize the keymap up front. Mouse control (click, drag, right-click) stays fully supported as a secondary path.
 
 ## What the prefix is
 
 A terminal multiplexer sits between your terminal and the programs running inside it. Those programs already use most key combinations: `ctrl+c` interrupts, `ctrl+r` searches history, editors claim nearly everything else. If Herdr grabbed common keys directly, it would break the programs inside it.
 
-The prefix solves this. Press the prefix key, default `ctrl+b`, and the next keypress goes to Herdr instead of your terminal. `prefix+c` means: press `ctrl+b`, release, then press `c`. Herdr reserves one key instead of dozens.
+The prefix solves this. Press the prefix key, default `ctrl+b`, and the next keypress goes to Herdr instead of your terminal. `prefix+z` means: press `ctrl+b`, release, then press `z`. Herdr reserves one key instead of dozens.
 
 Press `prefix+?` at any time to see every active binding. Press `/` in the keybind help to filter actions and shortcuts; use Backspace to edit the filter or `ctrl+u` to clear it.
 
-## Learn these five first
+## Which-key hint
+
+Pressing the prefix immediately shows a small which-key popup listing every key reachable from prefix mode, each paired with its action. Menus appear as `+workspace`, `+tab`, and so on. It is purely advisory: press any key and the bound action dispatches exactly as if the popup were not there; press Esc to dismiss it with no action. To turn it off entirely:
+
+```toml
+[keys]
+show_which_key = false
+```
+
+`true` (the default) shows the hint instantly on entering prefix mode, `false` never auto-shows it. The full keybind help at `prefix+?` stays available either way.
+
+## How the keymap is laid out
+
+The default keys follow four rules, so once you know them you can guess most bindings:
+
+1. **The hot path is one key.** Moving focus, switching tabs, splitting, and zooming sit directly after the prefix.
+2. **Menus are nouns.** Everything else lives in a menu named after the object it acts on: workspace, tab, pane, agent, git, system, and open (TUIs).
+3. **One verb vocabulary.** Inside every menu, `n` is new, `r` rename, `x` close or remove, and `s` switch or pick.
+4. **Keys mirror the screen.** Tabs are a horizontal bar, so they use `h`/`l` (and `[`/`]` at the top level); workspaces and agents are vertical lists, so they use `j`/`k`. Shift turns "go to" into "move": `H`/`L` and `{`/`}` move a tab, `shift+h/j/k/l` swaps panes. Split keys look like the divider they draw: `\` splits side by side, `-` stacks.
+
+## Top level
+
+Press the prefix, then one key:
 
 | Action | Key |
 | --- | --- |
-| New tab | `prefix+c` |
-| Split right / down | `prefix+v` / `prefix+minus` |
-| Move between panes | `prefix+h/j/k/l` |
-| Workspace navigation | `prefix+w` |
+| Focus pane left / down / up / right | `prefix+h/j/k/l` |
+| Swap pane left / down / up / right | `prefix+shift+h/j/k/l` |
+| Previous / next tab | `prefix+[` / `prefix+]` |
+| Move tab left / right | `prefix+{` / `prefix+}` |
+| Jump to tab 1–9 | `prefix+1..9` |
+| Next / previous pane | `prefix+tab` / `prefix+shift+tab` |
+| Last focused pane | `prefix+;` |
+| Split side by side / stacked | `prefix+\` / `prefix+-` |
+| Close pane | `prefix+x` |
+| Zoom the focused pane | `prefix+z` |
+| Resize mode | `prefix+r` |
+| Copy mode | `prefix+y` |
+| Keybind help | `prefix+?` |
+| Session navigator (goto) | `prefix+/` |
 | Detach, leave everything running | `prefix+q` |
 
-These cover most daily movement. Everything else can stay on the mouse.
+## Menus
 
-## The rest, by task
+Press the menu key after the prefix, then the entry key without the prefix. Esc in a menu returns to the top-level which-key menu.
 
-Panes:
+Workspace, `prefix+w`:
 
-| Action | Key |
+| Key | Action |
 | --- | --- |
-| Zoom the focused pane | `prefix+z` |
-| Close pane | `prefix+x` |
-| Swap panes | `prefix+shift+h/j/k/l` |
-| Resize mode | `prefix+r` |
-| Copy mode | `prefix+[` |
+| `n` | New workspace |
+| `r` | Rename workspace |
+| `x` | Close workspace |
+| `s` | Switch workspace (picker) |
+| `j` / `k` | Next / previous workspace |
+| `g` | Expand / collapse workspace group |
 
-Tabs:
+Tab, `prefix+t`:
 
-| Action | Key |
+| Key | Action |
 | --- | --- |
-| Next / previous tab | `prefix+n` / `prefix+p` |
-| Jump to tab 1–9 | `prefix+1..9` |
-| Rename tab | `prefix+shift+t` |
-| Close tab | `prefix+shift+x` |
+| `n` | New tab |
+| `r` | Rename tab |
+| `x` | Close tab |
+| `h` / `l` | Previous / next tab |
+| `H` / `L` | Move tab left / right |
 
-Workspaces and session:
+Pane, `prefix+p`:
 
-| Action | Key |
+| Key | Action |
 | --- | --- |
-| New workspace | `prefix+shift+n` |
-| Rename workspace | `prefix+shift+w` |
-| Close workspace | `prefix+shift+d` |
-| Goto picker | `prefix+g` |
-| Toggle sidebar | `prefix+b` |
+| `r` | Rename pane |
+| `c` | Clear the pane's custom name |
+| `x` | Close pane |
+| `z` | Zoom pane |
+| `\` / `-` | Split side by side / stacked |
+| `s` | Swap selected pane with focused pane |
+| `p` | Previous (last focused) pane |
+| `e` | Edit scrollback in `$EDITOR` |
+| `y` | Copy mode |
 
-The full keymap and the binding syntax live in the [keybinding reference](/docs/configuration/#keybindings).
+Agent, `prefix+a`:
+
+| Key | Action |
+| --- | --- |
+| `n` | New agent tab: pick an agent and open it in a new tab |
+| `a` | Jump to the notification target |
+| `j` / `k` | Next / previous agent |
+
+`prefix+a n` lists the supported agents installed on the machine running the session, so over SSH it shows the remote machine's agents. Type to filter, move with `↑`/`↓`, and press `enter` to open the agent in a new tab in the focused pane's directory, or `esc` to cancel. Agents have no keys of their own, so no key changes when you install or remove one. Quitting the agent closes its tab unless you split the tab first. The entry is hidden when the server is too old to support it.
+
+Git, `prefix+g`:
+
+| Key | Action |
+| --- | --- |
+| `n` | New worktree |
+| `o` | Open worktree |
+| `x` | Remove worktree |
+| `s` / `l` / `m` | Worktrunk switch or create / list / merge (Linux and macOS, bundled [worktrunk plugin](/docs/plugins/#worktrunk)) |
+
+System, `prefix+s`:
+
+| Key | Action |
+| --- | --- |
+| `s` | Settings |
+| `r` | Reload config |
+| `b` | Toggle sidebar |
+| `?` | Keybind help |
+| `q` | Detach |
+
+Open, `prefix+o`: the TUIs you configure in [`tuis.toml`](/docs/configuration/#system-tuis), each on its own key. The menu appears only when at least one TUI is configured.
+
+Menu openers are config fields (`workspace_menu`, `tab_menu`, `pane_menu`, `agent_menu`, `git_menu`, `system_menu`, `tui_menu`), so you can move them. Keys inside menus are fixed, but you can add your own entries to any menu, or replace a built-in entry on the same key; see [Adding commands to menus](/docs/configuration/#adding-commands-to-menus). Every menu action is also a normal keybinding field that is unset by default, so `new_tab = "prefix+c"` gives you a tmux-style top-level key without losing `prefix+t n`. The full keymap and the binding syntax live in the [keybinding reference](/docs/configuration/#keybindings).
 
 The Goto picker (`prefix+g`) lists each agent or terminal on its own row, grouped by workspace. Split tabs never hide their panes behind another row. Click a row or press Enter to jump directly to it. Press `/` to search names, agent kinds, tabs, workspaces, branches, or paths; use Up/Down or `j/k` to move between rows when not typing a search. Left/Right jumps to the first agent or terminal in the previous/next workspace section, without wrapping. While editing a search, Left/Right moves the text cursor instead. Outside search, `b/w/i/d` filter blocked, working, idle, or done agents, and `a` shows all terminals again. The selected destination's location and path appear below the list. When the list overflows, use the mouse wheel, click the scrollbar track, or drag its thumb to scroll without opening a destination.
 
@@ -84,7 +153,7 @@ Typing and paste insert at the cursor. Movement and deletion respect Unicode gra
 
 ## Copy mode
 
-Press `prefix+[` to enter copy mode for the focused pane. Use `h/j/k/l`, tmux-style `w/b/e` and big-word `W/B/E`, `{`/`}`, `PageUp`/`PageDown`, `ctrl+b`/`ctrl+f`, and `ctrl+u`/`ctrl+d` to move. Press `/` or `?` for forward or backward literal search, then `n` or `N` to repeat in the same or opposite direction. Search is case-insensitive unless the query contains an uppercase letter. Use `v` or Space to start a selection, `y` or Enter to copy it, and `q` or Esc to leave without copying. Esc clears an active selection or search before exiting. Copy mode does not pause the pane process: output remains live, follows at the bottom, and stays pinned when you navigate into history. The configured prefix keeps its normal meaning in copy mode; with the default prefix, `ctrl+b` enters prefix mode instead of paging up, so use a different prefix if you want `ctrl+b` for copy-mode page-up. Mouse drag-select copies without entering copy mode at all.
+Press `prefix+y` (or `prefix+p y`) to enter copy mode for the focused pane. Use `h/j/k/l`, tmux-style `w/b/e` and big-word `W/B/E`, `{`/`}`, `PageUp`/`PageDown`, `ctrl+b`/`ctrl+f`, and `ctrl+u`/`ctrl+d` to move. Press `/` or `?` for forward or backward literal search, then `n` or `N` to repeat in the same or opposite direction. Search is case-insensitive unless the query contains an uppercase letter. Use `v` or Space to start a selection, `y` or Enter to copy it, and `q` or Esc to leave without copying. Esc clears an active selection or search before exiting. Copy mode does not pause the pane process: output remains live, follows at the bottom, and stays pinned when you navigate into history. The configured prefix keeps its normal meaning in copy mode; with the default prefix, `ctrl+b` enters prefix mode instead of paging up, so use a different prefix if you want `ctrl+b` for copy-mode page-up. Mouse drag-select copies without entering copy mode at all.
 
 Mouse drag selections and selections started with `v`, Space, or `V` remain active during output and redraws, including when part of the selected range is outside the viewport. Copy reads the current text in that range, not a frozen snapshot. Resizing the pane or switching between its normal and alternate screens still clears the selection. Search results and double-click word selections retain their content-change checks.
 
@@ -105,7 +174,7 @@ Any chord works as a binding: `ctrl+j`, `alt+k`, whatever fits your hands. But a
 
 We mapped the default keybindings of Ghostty, iTerm2, Terminal.app, kitty, WezTerm, Alacritty, Warp, Windows Terminal, GNOME Terminal, and Konsole, plus the global shortcuts of GNOME and KDE. One modifier family is almost untouched everywhere: `ctrl+alt`. Terminals leave it free, it is not affected by the macOS option-key composing behavior that blocks plain `alt` chords, and it transmits even in terminals without a modern keyboard protocol. It is a safe default, but the choice is yours.
 
-This setup keeps the prefix bindings working and adds direct chords on top:
+This setup keeps the prefix bindings working and adds direct chords on top. `new_tab` has no top-level default, so it gets only the chord and stays reachable as `prefix+t n`:
 
 ```toml
 [keys]
@@ -113,10 +182,10 @@ focus_pane_left = ["prefix+h", "ctrl+alt+h"]
 focus_pane_down = ["prefix+j", "ctrl+alt+j"]
 focus_pane_up = ["prefix+k", "ctrl+alt+k"]
 focus_pane_right = ["prefix+l", "ctrl+alt+l"]
-previous_tab = ["prefix+p", "ctrl+alt+["]
-next_tab = ["prefix+n", "ctrl+alt+]"]
-new_tab = ["prefix+c", "ctrl+alt+c"]
-split_vertical = ["prefix+v", "ctrl+alt+d"]
+previous_tab = ["prefix+[", "ctrl+alt+["]
+next_tab = ["prefix+]", "ctrl+alt+]"]
+new_tab = "ctrl+alt+c"
+split_vertical = ["prefix+backslash", "ctrl+alt+d"]
 split_horizontal = ["prefix+minus", "ctrl+alt+shift+d"]
 zoom = ["prefix+z", "ctrl+alt+z"]
 ```

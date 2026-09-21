@@ -245,6 +245,7 @@ fn surface_with_popup() -> PaneSurfaceFrame {
     surface
 }
 
+mod agent_tab;
 mod agents_worktrees_notifications;
 mod chrome_context;
 mod close_tab;
@@ -261,3 +262,4 @@ mod mobile;
 mod mouse_selection;
 mod popup_focus_projection;
 mod startup_overlays;
+mod which_key;

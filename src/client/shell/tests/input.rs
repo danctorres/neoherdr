@@ -801,7 +801,7 @@ fn help_overlay_uses_live_keymap_and_owns_filter_state() {
         })
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(text.contains("workspace navigation"));
+    assert!(text.contains("switch workspace"));
     assert!(!text.contains("prefix mode"));
     assert!(filtered
         .cursor

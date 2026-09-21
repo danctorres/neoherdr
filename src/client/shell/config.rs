@@ -143,6 +143,7 @@ impl ClientShellConfig {
                     keybinds: config.keybinds(),
                 }),
             local_keys: config.keys.clone(),
+            tuis: config.tuis.clone(),
             keybinding_source: ClientShellKeybindingSource::Local,
             prompt_new_tab_name: config.ui.prompt_new_tab_name,
             prompt_new_workspace_name: config.ui.prompt_new_workspace_name,
@@ -174,7 +175,7 @@ impl ClientShellConfig {
 
     pub(crate) fn with_keybinding_source(mut self, source: ClientShellKeybindingSource) -> Self {
         self.keybinding_source = source;
-        self.keybinds.keybinds.custom_commands.clear();
+        self.keybinds.keybinds.clear_custom_commands();
         self
     }
 
@@ -238,11 +239,17 @@ impl ClientShellConfig {
             ClientShellKeybindingSource::Local => {
                 let mut config = crate::config::Config {
                     keys: self.local_keys.clone(),
+                    tuis: self.tuis.clone(),
                     ..Default::default()
                 };
-                config.keys.command = commands
+                let local_commands = config.keys.command.clone();
+                config.keys.command = local_commands
                     .iter()
-                    .filter_map(|command| {
+                    .filter(|command| {
+                        command.action_type == crate::config::CommandKeybindType::Group
+                    })
+                    .cloned()
+                    .chain(commands.iter().filter_map(|command| {
                         let action_type = match command.action {
                             crate::protocol::ClientShellCommandAction::Shell => {
                                 crate::config::CommandKeybindType::Shell
@@ -258,6 +265,47 @@ impl ClientShellConfig {
                             }
                             crate::protocol::ClientShellCommandAction::Unknown => return None,
                         };
+                        // The wire manifest folds `type = "tab"` into `Pane`
+                        // (generation-1 codecs are frozen), so a local Tab entry
+                        // matches a wire Pane command.
+                        let wire_equivalent = |local: crate::config::CommandKeybindType| match local
+                        {
+                            crate::config::CommandKeybindType::Tab => {
+                                crate::config::CommandKeybindType::Pane
+                            }
+                            other => other,
+                        };
+                        let matched = local_commands.iter().find_map(|local| {
+                            if wire_equivalent(local.action_type) != action_type {
+                                return None;
+                            }
+                            let overlaps = match &local.key {
+                                crate::config::BindingConfig::One(value) => {
+                                    !value.is_empty()
+                                        && command.binding_labels.iter().any(|label| label == value)
+                                }
+                                crate::config::BindingConfig::Many(values) => {
+                                    values.iter().any(|value| {
+                                        command.binding_labels.iter().any(|label| label == value)
+                                    })
+                                }
+                            };
+                            overlaps
+                                .then(|| Some((local.group.clone()?, local.action_type)))
+                                .flatten()
+                        });
+                        let (group, action_type) = match matched {
+                            Some((group, local_action_type)) => (Some(group), local_action_type),
+                            None => (None, action_type),
+                        };
+                        if group.is_none()
+                            && command
+                                .binding_labels
+                                .iter()
+                                .all(|label| !label.contains("prefix+"))
+                        {
+                            return None;
+                        }
                         Some(crate::config::CommandKeybindConfig {
                             key: if command.binding_labels.len() == 1 {
                                 crate::config::BindingConfig::One(command.binding_labels[0].clone())
@@ -271,8 +319,10 @@ impl ClientShellConfig {
                             description: command.description.clone(),
                             width: None,
                             height: None,
+                            group,
+                            ..Default::default()
                         })
-                    })
+                    }))
                     .collect();
                 config
                     .live_keybinds_with_diagnostics()
@@ -285,20 +335,35 @@ impl ClientShellConfig {
                 let Ok(action) = command.action.try_into() else {
                     continue;
                 };
-                keybinds
-                    .keybinds
-                    .custom_commands
-                    .push(crate::config::CustomCommandKeybind {
-                        bindings: crate::config::ActionKeybinds::from_labels(
-                            &command.binding_labels,
-                        )?,
-                        label: command.binding_label.clone(),
-                        command: command.command_id.clone(),
-                        action,
-                        description: command.description.clone(),
-                        width: None,
-                        height: None,
-                    });
+                let bindings = crate::config::ActionKeybinds::from_labels(&command.binding_labels)?;
+                if let Some(existing) =
+                    keybinds
+                        .keybinds
+                        .custom_commands
+                        .iter_mut()
+                        .find(|existing| {
+                            existing.action == action
+                                && existing.bindings.labels() == command.binding_labels
+                        })
+                {
+                    existing.command = command.command_id.clone();
+                    existing.description = command.description.clone();
+                } else {
+                    keybinds
+                        .keybinds
+                        .custom_commands
+                        .push(crate::config::CustomCommandKeybind {
+                            bindings,
+                            label: command.binding_label.clone(),
+                            command: command.command_id.clone(),
+                            argv: None,
+                            action,
+                            description: command.description.clone(),
+                            width: None,
+                            height: None,
+                            group: None,
+                        });
+                }
             }
         }
         self.keybinds = keybinds;
@@ -321,8 +386,9 @@ impl ClientShellConfig {
             match config.live_keybinds_with_diagnostics() {
                 Ok((mut keybinds, keybind_diagnostics)) => {
                     self.local_keys = config.keys.clone();
+                    self.tuis = config.tuis.clone();
                     if self.keybinding_source == ClientShellKeybindingSource::RemoteLocal {
-                        keybinds.keybinds.custom_commands.clear();
+                        keybinds.keybinds.clear_custom_commands();
                     }
                     self.keybinds = keybinds;
                     diagnostics.extend(keybind_diagnostics);

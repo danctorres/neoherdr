@@ -44,6 +44,7 @@ fn preview_key(state: &mut ClientShellState, bytes: &[u8]) {
 fn enter_navigation(state: &mut ClientShellState) {
     preview_key(state, &[0x02]);
     preview_key(state, b"w");
+    preview_key(state, b"s");
     assert_eq!(state.mode, ClientShellMode::Navigate);
 }
 
@@ -235,14 +236,14 @@ fn foreign_preview_blocks_keyboard_actions_but_keeps_active_action_context() {
     for confirm in [false, true] {
         state.config.confirm_close = confirm;
         for key in [
-            b"W".as_slice(),
-            b"D",
+            b"r".as_slice(),
+            b"x",
             b"\x1b[D",
             b"\x1b[C",
             b"\t",
             b"1",
-            b"c",
-            b"N",
+            b"\\",
+            b"n",
         ] {
             preview_key(&mut state, key);
             assert!(state.overlay.is_none());
@@ -271,7 +272,7 @@ fn foreign_preview_blocks_keyboard_actions_but_keeps_active_action_context() {
     assert_eq!(state.active_endpoint_id, ClientEndpointId::Local);
     assert!(state.activate_endpoint_projection(&remote));
     enter_navigation(&mut state);
-    preview_key(&mut state, b"W");
+    preview_key(&mut state, b"r");
     assert!(matches!(state.overlay, Some(ClientShellOverlay::Rename(_))));
 }
 
@@ -538,7 +539,7 @@ fn active_preview_is_not_retargeted_by_deletion_or_reboot() {
         assert!(state.visible_endpoint_notice.is_some());
         for confirm in [false, true] {
             state.config.confirm_close = confirm;
-            for key in [b"W", b"D"] {
+            for key in [b"r", b"x"] {
                 preview_key(&mut state, key);
             }
             assert!(state.overlay.is_none());

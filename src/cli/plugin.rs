@@ -1385,6 +1385,9 @@ fn source_display(plugin: &InstalledPluginInfo) -> String {
                 .unwrap_or("unknown");
             format!("github:{owner}/{repo}{subdir}@{reference}")
         }
+        PluginSourceKind::Local if crate::plugin_paths::is_builtin_plugin(plugin) => {
+            format!("builtin:{}", plugin.plugin_root)
+        }
         PluginSourceKind::Local => format!("local:{}", plugin.plugin_root),
     }
 }
