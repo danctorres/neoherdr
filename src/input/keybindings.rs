@@ -258,7 +258,77 @@ pub(crate) fn flat_action_bindings(
     ]
 }
 
+/// The name a `[[keys.command]] action = "…"` menu entry uses for each
+/// built-in action it can run: the matching `keys.<action>` field name.
+/// `new_agent_tab` has no `keys.*` field; it is a menu-only action.
+const ACTION_NAMES: &[(&str, KeybindAction)] = &[
+    ("help", KeybindAction::Help),
+    ("settings", KeybindAction::Settings),
+    ("workspace_picker", KeybindAction::WorkspacePicker),
+    ("new_workspace", KeybindAction::NewWorkspace),
+    ("new_worktree", KeybindAction::NewWorktree),
+    ("open_worktree", KeybindAction::OpenWorktree),
+    ("remove_worktree", KeybindAction::RemoveWorktree),
+    ("rename_workspace", KeybindAction::RenameWorkspace),
+    ("close_workspace", KeybindAction::CloseWorkspace),
+    ("previous_workspace", KeybindAction::PreviousWorkspace),
+    ("next_workspace", KeybindAction::NextWorkspace),
+    ("previous_agent", KeybindAction::PreviousAgent),
+    ("next_agent", KeybindAction::NextAgent),
+    ("new_agent_tab", KeybindAction::NewAgentTab),
+    ("new_tab", KeybindAction::NewTab),
+    ("rename_tab", KeybindAction::RenameTab),
+    ("previous_tab", KeybindAction::PreviousTab),
+    ("next_tab", KeybindAction::NextTab),
+    ("move_tab_previous", KeybindAction::MoveTabPrevious),
+    ("move_tab_next", KeybindAction::MoveTabNext),
+    ("close_tab", KeybindAction::CloseTab),
+    ("rename_pane", KeybindAction::RenamePane),
+    ("edit_scrollback", KeybindAction::EditScrollback),
+    ("clear_pane", KeybindAction::ClearPane),
+    ("copy_mode", KeybindAction::CopyMode),
+    ("focus_pane_left", KeybindAction::FocusPaneLeft),
+    ("focus_pane_down", KeybindAction::FocusPaneDown),
+    ("focus_pane_up", KeybindAction::FocusPaneUp),
+    ("focus_pane_right", KeybindAction::FocusPaneRight),
+    ("swap_pane_left", KeybindAction::SwapPaneLeft),
+    ("swap_pane_down", KeybindAction::SwapPaneDown),
+    ("swap_pane_up", KeybindAction::SwapPaneUp),
+    ("swap_pane_right", KeybindAction::SwapPaneRight),
+    ("last_pane", KeybindAction::LastPane),
+    ("cycle_pane_next", KeybindAction::CyclePaneNext),
+    ("cycle_pane_previous", KeybindAction::CyclePanePrevious),
+    ("split_vertical", KeybindAction::SplitVertical),
+    ("split_horizontal", KeybindAction::SplitHorizontal),
+    ("close_pane", KeybindAction::ClosePane),
+    ("zoom", KeybindAction::Zoom),
+    ("resize_mode", KeybindAction::EnterResizeMode),
+    ("resize_pane_left", KeybindAction::ResizePaneLeft),
+    ("resize_pane_down", KeybindAction::ResizePaneDown),
+    ("resize_pane_up", KeybindAction::ResizePaneUp),
+    ("resize_pane_right", KeybindAction::ResizePaneRight),
+    ("toggle_sidebar", KeybindAction::ToggleSidebar),
+    ("toggle_group", KeybindAction::ToggleGroup),
+    ("clear_pane_name", KeybindAction::ClearPaneName),
+    ("swap_with_focused_pane", KeybindAction::SwapWithFocusedPane),
+    ("reload_config", KeybindAction::ReloadConfig),
+    (
+        "open_notification_target",
+        KeybindAction::OpenNotificationTarget,
+    ),
+    ("detach", KeybindAction::Detach),
+    ("goto", KeybindAction::OpenNavigator),
+];
+
 impl KeybindAction {
+    /// The built-in action a menu entry names with `action = "<name>"`.
+    pub(crate) fn from_config_name(name: &str) -> Option<Self> {
+        ACTION_NAMES
+            .iter()
+            .find(|(candidate, _)| *candidate == name)
+            .map(|&(_, action)| action)
+    }
+
     /// `(has a default binding, action)` for every flat action.
     #[cfg(test)]
     pub(crate) fn flat_defaults_for_test(keybinds: &Keybinds) -> Vec<(bool, KeybindAction)> {
