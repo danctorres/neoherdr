@@ -74,7 +74,8 @@ fn named_sessions_share_live_plugin_registry() {
         &runtime_dir,
         &["--session", "beta", "plugin", "list", "--json"],
     );
-    assert_eq!(beta_list["result"]["plugins"].as_array().unwrap().len(), 2);
+    // The two linked plugins plus the bundled worktrunk plugin.
+    assert_eq!(beta_list["result"]["plugins"].as_array().unwrap().len(), 3);
 
     run_named_cli_json(
         &config_home,
@@ -968,7 +969,13 @@ command = ["sh", "-c", "sleep 5"]
     assert_eq!(unlinked["result"]["removed"], true);
 
     let listed = run_cli_json(&socket_path, &["plugin", "list", "--json"]);
-    assert!(listed["result"]["plugins"].as_array().unwrap().is_empty());
+    let remaining = listed["result"]["plugins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|plugin| plugin["plugin_id"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(remaining, ["worktrunk"], "only the bundled plugin remains");
 
     cleanup_spawned_herdr(herdr, base);
 }

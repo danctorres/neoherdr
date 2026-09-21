@@ -13,7 +13,13 @@ pub(crate) fn builtin_plugin_dir(plugin_id: &str) -> PathBuf {
 /// Built-in plugins are registered as local plugins rooted at their
 /// materialized directory, so the root identifies them.
 pub(crate) fn is_builtin_plugin(plugin: &crate::api::schema::InstalledPluginInfo) -> bool {
-    let dir = builtin_plugin_dir(&plugin.plugin_id);
+    is_plugin_rooted_at(plugin, &builtin_plugin_dir(&plugin.plugin_id))
+}
+
+pub(crate) fn is_plugin_rooted_at(
+    plugin: &crate::api::schema::InstalledPluginInfo,
+    dir: &Path,
+) -> bool {
     let root = Path::new(&plugin.plugin_root);
     root == dir || dir.canonicalize().is_ok_and(|dir| root == dir)
 }

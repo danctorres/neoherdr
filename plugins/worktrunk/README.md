@@ -15,8 +15,12 @@ opens and focuses the chosen checkout as a Herdr space.
 
 ## Install
 
+Herdr bundles this plugin and registers it on start. `herdr plugin disable
+worktrunk` hides its menu entries; `herdr plugin unlink worktrunk` removes it
+for good. To bring it back, link it again:
+
 ```bash
-herdr plugin link ./plugins/worktrunk
+herdr plugin link ~/.config/herdr/plugins/builtin/worktrunk
 ```
 
 ## Keybindings
