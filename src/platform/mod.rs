@@ -355,7 +355,8 @@ mod unix_common;
 pub(crate) mod unix_image_files;
 #[cfg(unix)]
 pub(crate) use unix_common::{
-    begin_cli_output, end_cli_output, forward_remote_bridge_stdio, RemoteBridgeWake,
+    begin_cli_output, end_cli_output, exit_notice_argv, forward_remote_bridge_stdio,
+    RemoteBridgeWake,
 };
 
 mod client_state;

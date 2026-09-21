@@ -39,6 +39,22 @@ pub(crate) fn classify_child_exit(status: &portable_pty::ExitStatus) -> super::C
     }
 }
 
+/// Argv that prints `message` below the pane's existing output and exits once
+/// the user presses Enter. The script avoids double quotes; see
+/// `WINDOWS_POWERSHELL_SHELL_INTEGRATION_COMMAND` for why.
+pub(crate) fn exit_notice_argv(message: &str) -> Vec<String> {
+    vec![
+        "powershell.exe".to_owned(),
+        "-NoLogo".to_owned(),
+        "-NoProfile".to_owned(),
+        "-Command".to_owned(),
+        format!(
+            "Write-Host ''; Write-Host {}; [void][Console]::ReadLine()",
+            super::quote_powershell_arg(message)
+        ),
+    ]
+}
+
 pub(crate) struct RemoteBridgeWake;
 
 impl RemoteBridgeWake {

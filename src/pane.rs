@@ -2324,6 +2324,44 @@ impl PaneRuntime {
         render_notify: Arc<Notify>,
         render_dirty: Arc<RenderSignal>,
     ) -> std::io::Result<Self> {
+        Self::spawn_argv_command_with_history(
+            pane_id,
+            rows,
+            cols,
+            cwd,
+            argv,
+            launch_env,
+            agent_detection,
+            scrollback_limit_bytes,
+            host_terminal_theme,
+            host_terminal_appearance,
+            None,
+            events,
+            render_notify,
+            render_dirty,
+        )
+    }
+
+    /// Like [`Self::spawn_argv_command`], with the new terminal seeded from
+    /// `initial_history_ansi` so earlier output stays visible above the child's.
+    // Runtime construction needs to thread PTY size, environment, theme, render hooks, and detection policy together.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn spawn_argv_command_with_history(
+        pane_id: PaneId,
+        rows: u16,
+        cols: u16,
+        cwd: std::path::PathBuf,
+        argv: &[String],
+        launch_env: &PaneLaunchEnv,
+        agent_detection: AgentDetection,
+        scrollback_limit_bytes: usize,
+        host_terminal_theme: crate::terminal_theme::TerminalTheme,
+        host_terminal_appearance: Option<crate::terminal_theme::HostAppearance>,
+        initial_history_ansi: Option<&str>,
+        events: mpsc::Sender<AppEvent>,
+        render_notify: Arc<Notify>,
+        render_dirty: Arc<RenderSignal>,
+    ) -> std::io::Result<Self> {
         let Some((program, args)) = argv.split_first() else {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
@@ -2349,7 +2387,10 @@ impl PaneRuntime {
             render_dirty,
             cmd,
             "failed to spawn argv command pane",
-            SpawnInitialState::default(),
+            SpawnInitialState {
+                history_ansi: initial_history_ansi,
+                ..SpawnInitialState::default()
+            },
             agent_detection,
         )
     }
@@ -2489,6 +2530,7 @@ impl PaneRuntime {
                 let _ = rt.block_on(exit_events.send(AppEvent::PaneDied {
                     pane_id,
                     exit_reason: crate::platform::ChildExitReason::Handoff,
+                    exit_status: None,
                 }));
                 debug!(pane = pane_id.raw(), "handoff PTY actor exiting");
             });
@@ -2600,16 +2642,19 @@ impl PaneRuntime {
                 crate::logging::pane_spawned(pane_id.raw(), pid);
             }
             tokio::task::spawn_blocking(move || {
-                let exit_reason = match child.wait() {
+                let (exit_reason, exit_status) = match child.wait() {
                     Ok(status) => {
                         let exit_reason = crate::platform::classify_child_exit(&status);
                         let status_text = format!("{status:?}");
                         crate::logging::pane_exited(pane_id.raw(), &status_text);
-                        exit_reason
+                        // A signal death has no exit code; portable-pty reports 1 for it.
+                        let exit_status =
+                            status.signal().is_none().then(|| status.exit_code() as i32);
+                        (exit_reason, exit_status)
                     }
                     Err(e) => {
                         crate::logging::pane_exit_failed(pane_id.raw(), &e.to_string());
-                        crate::platform::ChildExitReason::WaitFailed
+                        (crate::platform::ChildExitReason::WaitFailed, None)
                     }
                 };
                 child_wait_completed.store(true, Ordering::Release);
@@ -2617,6 +2662,7 @@ impl PaneRuntime {
                 if let Err(e) = rt.block_on(events.send(AppEvent::PaneDied {
                     pane_id,
                     exit_reason,
+                    exit_status,
                 })) {
                     error!(pane = pane_id.raw(), err = %e, "failed to send PaneDied event");
                 }

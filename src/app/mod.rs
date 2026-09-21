@@ -3018,6 +3018,7 @@ mod tests {
         app.handle_internal_event(AppEvent::PaneDied {
             pane_id: agent_pane,
             exit_reason: crate::platform::ChildExitReason::Exited,
+            exit_status: Some(0),
         });
 
         assert_eq!(app.state.workspaces[0].tabs.len(), 1);
@@ -3040,6 +3041,7 @@ mod tests {
         app.handle_internal_event(AppEvent::PaneDied {
             pane_id: agent_pane,
             exit_reason: crate::platform::ChildExitReason::Exited,
+            exit_status: Some(0),
         });
 
         let workspace = &app.state.workspaces[0];
@@ -3047,6 +3049,100 @@ mod tests {
         assert_eq!(workspace.active_tab_index(), 1);
         assert_eq!(workspace.tabs[1].layout.pane_ids(), [other_pane]);
         assert_eq!(workspace.focused_pane_id(), Some(other_pane));
+
+        crate::app::api::test_support::shutdown_test_runtimes(&mut app);
+        let _ = std::fs::remove_dir_all(project);
+    }
+
+    #[cfg(unix)]
+    fn agent_tab_terminal(app: &App) -> &crate::terminal::TerminalState {
+        let tab = &app.state.workspaces[0].tabs[1];
+        &app.state.terminals[&tab.panes[&tab.root_pane].attached_terminal_id]
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn failed_agent_tab_stays_open_until_its_exit_notice_closes() {
+        let _path = FakeAgentPath::install("agent-tab-failed-exit");
+        let (mut app, project) = agent_tab_test_app("agent-tab-failed-exit");
+        app.handle_api_request(open_agent_tab_request("pi"));
+        let agent_pane = app.state.workspaces[0].tabs[1].root_pane;
+        assert_eq!(
+            agent_tab_terminal(&app).hold_on_failure.as_deref(),
+            Some("pi")
+        );
+
+        app.handle_internal_event(AppEvent::PaneDied {
+            pane_id: agent_pane,
+            exit_reason: crate::platform::ChildExitReason::Exited,
+            exit_status: Some(1),
+        });
+
+        let workspace = &app.state.workspaces[0];
+        assert_eq!(workspace.tabs.len(), 2);
+        assert_eq!(workspace.active_tab_index(), 1);
+        assert_eq!(workspace.tabs[1].layout.pane_ids(), [agent_pane]);
+        let terminal = agent_tab_terminal(&app);
+        assert_eq!(terminal.hold_on_failure, None);
+        assert!(app.terminal_runtimes.get(&terminal.id).is_some());
+
+        // Enter ends the notice process, which closes the tab however it exits.
+        app.handle_internal_event(AppEvent::PaneDied {
+            pane_id: agent_pane,
+            exit_reason: crate::platform::ChildExitReason::Exited,
+            exit_status: Some(0),
+        });
+        assert_eq!(app.state.workspaces[0].tabs.len(), 1);
+
+        crate::app::api::test_support::shutdown_test_runtimes(&mut app);
+        let _ = std::fs::remove_dir_all(project);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn agent_tab_with_unknown_exit_status_stays_open() {
+        let _path = FakeAgentPath::install("agent-tab-unknown-exit");
+        let (mut app, project) = agent_tab_test_app("agent-tab-unknown-exit");
+        app.handle_api_request(open_agent_tab_request("pi"));
+        let agent_pane = app.state.workspaces[0].tabs[1].root_pane;
+
+        app.handle_internal_event(AppEvent::PaneDied {
+            pane_id: agent_pane,
+            exit_reason: crate::platform::ChildExitReason::WaitFailed,
+            exit_status: None,
+        });
+
+        assert_eq!(app.state.workspaces[0].tabs.len(), 2);
+        assert_eq!(
+            app.state.workspaces[0].tabs[1].layout.pane_ids(),
+            [agent_pane]
+        );
+
+        crate::app::api::test_support::shutdown_test_runtimes(&mut app);
+        let _ = std::fs::remove_dir_all(project);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn failed_agent_in_a_split_tab_keeps_its_pane_open() {
+        let _path = FakeAgentPath::install("agent-tab-split-failed-exit");
+        let (mut app, project) = agent_tab_test_app("agent-tab-split-failed-exit");
+        app.handle_api_request(open_agent_tab_request("pi"));
+        let agent_pane = app.state.workspaces[0].tabs[1].root_pane;
+        let other_pane = app.state.workspaces[0].test_split(ratatui::layout::Direction::Horizontal);
+        app.state.ensure_test_terminals();
+
+        app.handle_internal_event(AppEvent::PaneDied {
+            pane_id: agent_pane,
+            exit_reason: crate::platform::ChildExitReason::Interrupted,
+            exit_status: None,
+        });
+
+        let mut panes = app.state.workspaces[0].tabs[1].layout.pane_ids();
+        panes.sort_by_key(|pane| pane.raw());
+        let mut expected = vec![agent_pane, other_pane];
+        expected.sort_by_key(|pane| pane.raw());
+        assert_eq!(panes, expected);
 
         crate::app::api::test_support::shutdown_test_runtimes(&mut app);
         let _ = std::fs::remove_dir_all(project);
@@ -3408,10 +3504,12 @@ mod tests {
         app.handle_internal_event(AppEvent::PaneDied {
             pane_id: first_pane,
             exit_reason: crate::platform::ChildExitReason::Interrupted,
+            exit_status: None,
         });
         app.handle_internal_event(AppEvent::PaneDied {
             pane_id: second_pane,
             exit_reason: crate::platform::ChildExitReason::Interrupted,
+            exit_status: None,
         });
         assert!(app.state.workspaces.is_empty());
         assert!(app.ensure_default_workspace());
@@ -3444,6 +3542,7 @@ mod tests {
         app.handle_internal_event(AppEvent::PaneDied {
             pane_id,
             exit_reason: crate::platform::ChildExitReason::Interrupted,
+            exit_status: None,
         });
         assert!(crate::persist::load().is_some());
 
@@ -3478,6 +3577,7 @@ mod tests {
             app.handle_internal_event(AppEvent::PaneDied {
                 pane_id,
                 exit_reason: crate::platform::ChildExitReason::Interrupted,
+                exit_status: None,
             });
             app.state.workspaces = vec![Workspace::test_new("newer")];
             app.state.active = Some(0);
@@ -3487,6 +3587,7 @@ mod tests {
                 app.handle_internal_event(AppEvent::PaneDied {
                     pane_id: app.state.workspaces[0].tabs[0].root_pane,
                     exit_reason: crate::platform::ChildExitReason::Interrupted,
+                    exit_status: None,
                 });
             }
             app.save_session_on_shutdown();
