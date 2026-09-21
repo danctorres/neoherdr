@@ -245,8 +245,11 @@ impl ClientShellConfig {
                 let local_commands = config.keys.command.clone();
                 config.keys.command = local_commands
                     .iter()
+                    // Menu openers and built-in action entries are client
+                    // keymap; only executable commands come from the server.
                     .filter(|command| {
                         command.action_type == crate::config::CommandKeybindType::Group
+                            || command.action.is_some()
                     })
                     .cloned()
                     .chain(commands.iter().filter_map(|command| {
