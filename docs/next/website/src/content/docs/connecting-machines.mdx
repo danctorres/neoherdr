@@ -51,6 +51,14 @@ On Windows servers, setup also checks executables used by Herdr processes owned 
 
 Herdr checks both the installed binary and the running server. It starts the requested background server before saving the profile. Compatible client and server versions do not have to match. Missing or incompatible installations go through an approval-based setup. When the running server needs replacement, setup asks before stopping it and its pane processes, then starts the compatible server. The default answer is No. If installation and replacement are both needed, one confirmation covers them. `machine add` does not use experimental live handoff. Cancelling or failing setup leaves the profile unsaved.
 
+neoherdr never downloads a server from herdr.dev. When a Linux or macOS host with the same OS and architecture as your machine needs an install, setup uploads the neoherdr binary you are running. For any other host, including Windows, build neoherdr for that host and point setup at it:
+
+```bash
+HERDR_REMOTE_BINARY=/path/to/neoherdr-build herdr --remote workbox
+```
+
+Without `HERDR_REMOTE_BINARY`, setup for a mismatched host stops before changing anything and prints `remote is <os>-<arch>; build neoherdr for it and set HERDR_REMOTE_BINARY=<path>`.
+
 Run `herdr` to open the UI. If a local client is already open, added and enabled machines normally appear within a second and connect in the background without changing your selection. An in-progress machine switch finishes before profile changes are applied. The remote server keeps running after setup exits.
 
 ## Switch between machines

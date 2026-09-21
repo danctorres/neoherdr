@@ -1325,6 +1325,9 @@ fn prepare_discovered_remote_herdr(
         }
     }
 
+    // Decide what to install before asking to stop a server or install, so a
+    // build that cannot seed this remote fails without changing it.
+    let binary_source = remote_binary_source_for(&remote_herdr.platform, override_binary)?;
     let mut stop_after_install_approved = false;
     if let Some(status_probe_herdr) = candidates.first().or_else(|| {
         remote_binary_exists(ssh, &remote_herdr)
@@ -1342,10 +1345,10 @@ fn prepare_discovered_remote_herdr(
         confirm_remote_install(
             &ssh.destination(),
             &remote_herdr,
-            &install_source_description(&remote_herdr.platform, override_binary.as_deref()),
+            &install_source_description(&remote_herdr.platform, &binary_source),
         )?;
     }
-    let source = resolve_install_source(&remote_herdr.platform, override_binary)?;
+    let source = resolve_install_source(&remote_herdr.platform, binary_source)?;
     let install_result = ssh.install_herdr(&remote_herdr, &source.path);
     source.cleanup();
     install_result?;
@@ -1410,6 +1413,9 @@ fn prepare_windows_remote_herdr(
         }
     }
 
+    // Windows needs the complete package, including its app-local ConPTY
+    // runtime, so the running executable never seeds a Windows remote.
+    let binary_source = remote_binary_source_for(&remote_herdr.platform, override_package)?;
     let stop_after_install_approved = if let Some(candidate) = candidates.first() {
         confirm_remote_install_with_running_server(
             ssh,
@@ -1424,14 +1430,10 @@ fn prepare_windows_remote_herdr(
         confirm_remote_install(
             &ssh.destination(),
             &remote_herdr,
-            &install_source_description(&remote_herdr.platform, override_package.as_deref()),
+            &install_source_description(&remote_herdr.platform, &binary_source),
         )?;
     }
-    // Windows needs the complete package, including its app-local ConPTY runtime.
-    let source = match override_package {
-        Some(path) => InstallSource::persistent(path),
-        None => download_release_asset(&remote_herdr.platform)?,
-    };
+    let source = resolve_install_source(&remote_herdr.platform, binary_source)?;
     let install_result = (|| {
         let sha256 = crate::checksum::file_sha256(&source.path)?;
         ssh.install_windows_herdr(
@@ -1817,58 +1819,90 @@ fn remote_binary_override_path() -> io::Result<Option<PathBuf>> {
     Ok(Some(path))
 }
 
-fn install_source_description(platform: &RemotePlatform, override_binary: Option<&Path>) -> String {
-    install_source_description_for(
-        platform,
+/// Where the herdr binary installed on a remote host comes from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RemoteBinarySource {
+    /// The file named by `HERDR_REMOTE_BINARY`.
+    Override(PathBuf),
+    /// The running executable.
+    LocalExecutable,
+    /// The matching asset from the update source's release manifest.
+    ReleaseAsset,
+}
+
+/// Choose the binary to install on a remote host.
+///
+/// `HERDR_REMOTE_BINARY` always wins. A POSIX remote with the local OS and
+/// architecture receives the running executable when it can be uploaded.
+/// Otherwise builds with an update source download its release asset, and
+/// builds without one (neoherdr) fail rather than install upstream herdr.
+fn select_remote_binary_source(
+    update_source: Option<crate::build_info::UpdateSource>,
+    override_binary: Option<PathBuf>,
+    local: &RemotePlatform,
+    remote: &RemotePlatform,
+    local_executable_uploadable: bool,
+) -> io::Result<RemoteBinarySource> {
+    if let Some(path) = override_binary {
+        return Ok(RemoteBinarySource::Override(path));
+    }
+    if !remote.is_windows() && remote == local && local_executable_uploadable {
+        return Ok(RemoteBinarySource::LocalExecutable);
+    }
+    if update_source.is_some() {
+        return Ok(RemoteBinarySource::ReleaseAsset);
+    }
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        format!(
+            "remote is {}; build neoherdr for it and set {REMOTE_BINARY_ENV_VAR}=<path>",
+            remote.asset_key()
+        ),
+    ))
+}
+
+fn remote_binary_source_for(
+    remote: &RemotePlatform,
+    override_binary: Option<PathBuf>,
+) -> io::Result<RemoteBinarySource> {
+    select_remote_binary_source(
+        crate::build_info::update_source(),
         override_binary,
-        local_binary_can_seed_remote(platform),
+        &RemotePlatform::local(),
+        remote,
+        local_executable_uploadable(),
     )
 }
 
-fn install_source_description_for(
-    platform: &RemotePlatform,
-    override_binary: Option<&Path>,
-    local_binary_can_seed_remote: bool,
-) -> String {
-    if let Some(path) = override_binary {
-        return format!("{REMOTE_BINARY_ENV_VAR} ({})", path.display());
-    }
-
-    if local_binary_can_seed_remote {
-        "the current local herdr binary".to_string()
-    } else {
-        format!(
+fn install_source_description(platform: &RemotePlatform, source: &RemoteBinarySource) -> String {
+    match source {
+        RemoteBinarySource::Override(path) => {
+            format!("{REMOTE_BINARY_ENV_VAR} ({})", path.display())
+        }
+        RemoteBinarySource::LocalExecutable => "the current local herdr binary".to_string(),
+        RemoteBinarySource::ReleaseAsset => format!(
             "the {} {} asset for {}",
             current_version(),
             current_channel(),
             platform.asset_key()
-        )
+        ),
     }
 }
 
 fn resolve_install_source(
     platform: &RemotePlatform,
-    override_binary: Option<PathBuf>,
+    source: RemoteBinarySource,
 ) -> io::Result<InstallSource> {
-    if let Some(path) = override_binary {
-        return Ok(InstallSource::persistent(path));
-    }
-
-    if *platform == RemotePlatform::local() {
-        let path = std::env::current_exe()?;
-        if !crate::update::is_package_manager_managed_exe_path(&path) {
-            return Ok(InstallSource::persistent(path));
+    match source {
+        RemoteBinarySource::Override(path) => Ok(InstallSource::persistent(path)),
+        RemoteBinarySource::LocalExecutable => {
+            Ok(InstallSource::persistent(std::env::current_exe()?))
         }
+        RemoteBinarySource::ReleaseAsset => download_release_asset(platform),
     }
-
-    download_release_asset(platform)
 }
 
-fn local_binary_can_seed_remote(platform: &RemotePlatform) -> bool {
-    if platform.is_windows() || *platform != RemotePlatform::local() {
-        return false;
-    }
-
+fn local_executable_uploadable() -> bool {
     std::env::current_exe()
         .map(|path| !crate::update::is_package_manager_managed_exe_path(&path))
         .unwrap_or(false)
@@ -5188,7 +5222,6 @@ function Get-Process {
         assert!(!old.supports_endpoint_requirement(&windows, false));
         assert!(current.supports_endpoint_requirement(&windows, false));
         assert!(old.supports_endpoint_requirement(&linux, false));
-        assert!(!local_binary_can_seed_remote(&windows));
         assert_eq!(
             windows_package_identity(true, &"a".repeat(64)),
             format!("{}-custom.{}", current_version(), "a".repeat(64))
@@ -5421,34 +5454,104 @@ function Get-Process {
         )));
     }
 
+    const LINUX_X86_64: RemotePlatform = RemotePlatform {
+        os: "linux",
+        arch: "x86_64",
+    };
+    const MACOS_AARCH64: RemotePlatform = RemotePlatform {
+        os: "macos",
+        arch: "aarch64",
+    };
+    const WINDOWS_X86_64: RemotePlatform = RemotePlatform {
+        os: "windows",
+        arch: "x86_64",
+    };
+    const HERDR_DEV: Option<crate::build_info::UpdateSource> =
+        Some(crate::build_info::UpdateSource::HerdrDev);
+
     #[test]
-    fn install_source_description_uses_override_binary() {
+    fn remote_binary_override_wins_for_every_update_source_and_target() {
+        for source in [None, HERDR_DEV] {
+            for remote in [&LINUX_X86_64, &MACOS_AARCH64, &WINDOWS_X86_64] {
+                assert_eq!(
+                    select_remote_binary_source(
+                        source,
+                        Some(PathBuf::from("/tmp/herdr")),
+                        &LINUX_X86_64,
+                        remote,
+                        true,
+                    )
+                    .ok(),
+                    Some(RemoteBinarySource::Override(PathBuf::from("/tmp/herdr")))
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn matching_posix_remote_receives_the_local_executable() {
+        for source in [None, HERDR_DEV] {
+            assert_eq!(
+                select_remote_binary_source(source, None, &LINUX_X86_64, &LINUX_X86_64, true).ok(),
+                Some(RemoteBinarySource::LocalExecutable)
+            );
+        }
+    }
+
+    #[test]
+    fn update_source_downloads_release_asset_when_local_executable_cannot_seed_remote() {
+        assert_eq!(
+            select_remote_binary_source(HERDR_DEV, None, &LINUX_X86_64, &MACOS_AARCH64, true).ok(),
+            Some(RemoteBinarySource::ReleaseAsset)
+        );
+        assert_eq!(
+            select_remote_binary_source(HERDR_DEV, None, &LINUX_X86_64, &LINUX_X86_64, false).ok(),
+            Some(RemoteBinarySource::ReleaseAsset)
+        );
+        assert_eq!(
+            select_remote_binary_source(HERDR_DEV, None, &WINDOWS_X86_64, &WINDOWS_X86_64, true)
+                .ok(),
+            Some(RemoteBinarySource::ReleaseAsset)
+        );
+    }
+
+    #[test]
+    fn no_update_source_refuses_mismatched_remote_without_override() {
+        let err = select_remote_binary_source(None, None, &LINUX_X86_64, &MACOS_AARCH64, true)
+            .expect_err("mismatched remote");
+        assert_eq!(
+            err.to_string(),
+            "remote is macos-aarch64; build neoherdr for it and set HERDR_REMOTE_BINARY=<path>"
+        );
+
+        // Windows remotes need the full package, never the bare executable.
+        let err = select_remote_binary_source(None, None, &WINDOWS_X86_64, &WINDOWS_X86_64, true)
+            .expect_err("windows remote");
+        assert_eq!(
+            err.to_string(),
+            "remote is windows-x86_64; build neoherdr for it and set HERDR_REMOTE_BINARY=<path>"
+        );
+    }
+
+    #[test]
+    fn install_source_description_names_each_source() {
         let platform = RemotePlatform {
             os: "linux",
             arch: "aarch64",
         };
         assert_eq!(
-            install_source_description_for(&platform, Some(Path::new("/tmp/herdr-aarch64")), false),
+            install_source_description(
+                &platform,
+                &RemoteBinarySource::Override(PathBuf::from("/tmp/herdr-aarch64"))
+            ),
             "HERDR_REMOTE_BINARY (/tmp/herdr-aarch64)"
         );
-    }
-
-    #[test]
-    fn install_source_description_uses_local_binary_when_allowed() {
-        let platform = RemotePlatform::local();
-
         assert_eq!(
-            install_source_description_for(&platform, None, true),
+            install_source_description(&platform, &RemoteBinarySource::LocalExecutable),
             "the current local herdr binary"
         );
-    }
-
-    #[test]
-    fn install_source_description_uses_release_asset_when_local_binary_cannot_seed_remote() {
-        let platform = RemotePlatform::local();
-
         assert_eq!(
-            install_source_description_for(&platform, None, false),
+            install_source_description(&platform, &RemoteBinarySource::ReleaseAsset),
             format!(
                 "the {} {} asset for {}",
                 current_version(),
@@ -5464,8 +5567,11 @@ function Get-Process {
             os: "linux",
             arch: "aarch64",
         };
-        let source = resolve_install_source(&platform, Some(PathBuf::from("/tmp/herdr-aarch64")))
-            .expect("override source");
+        let source = resolve_install_source(
+            &platform,
+            RemoteBinarySource::Override(PathBuf::from("/tmp/herdr-aarch64")),
+        )
+        .expect("override source");
         assert_eq!(source.path, PathBuf::from("/tmp/herdr-aarch64"));
         assert!(source.temporary_dir.is_none());
     }
