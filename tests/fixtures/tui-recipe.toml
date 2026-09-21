@@ -1,0 +1,33 @@
+[[tui]]
+id = "lazygit"
+key = "g"
+title = "lazygit"
+description = "git UI for the focused pane's repo"
+command = ["lazygit"]
+width = "95%"
+height = "95%"
+
+[[tui]]
+id = "gh-dash"
+key = "d"
+title = "gh-dash"
+description = "GitHub PRs and issues (gh extension install dlvhdr/gh-dash)"
+command = ["gh", "dash"]
+width = "95%"
+height = "95%"
+
+[[tui]]
+id = "yazi"
+key = "f"
+title = "yazi"
+description = "file manager in the focused pane's directory"
+command = ["yazi"]
+width = "90%"
+height = "90%"
+
+[[tui]]
+id = "btop"
+key = "b"
+title = "btop"
+description = "system monitor"
+command = ["btop"]

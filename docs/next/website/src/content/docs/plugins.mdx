@@ -396,9 +396,8 @@ entry on that key.
 
 ## System TUIs
 
-For system-installed TUIs, use `tuis.toml` next to your `config.toml`
-(`~/.config/herdr/tuis.toml` on Linux and macOS), described in
-[Configuration](/docs/configuration/#system-tuis). Configured TUIs appear in
+For system-installed TUIs, add `[[tui]]` entries to your `config.toml`, as
+described in [Configuration](/docs/configuration/#system-tuis). Configured TUIs appear in
 the `prefix+o` menu.
 This keeps binaries and their lifecycle outside Herdr while still providing
 popup actions and which-key discovery. Use a plugin instead when the integration

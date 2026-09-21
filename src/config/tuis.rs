@@ -39,27 +39,19 @@ impl Default for TuiConfig {
     }
 }
 
-pub(crate) fn load_tuis() -> (Vec<TuiConfig>, Vec<String>) {
-    let path = tui_path();
-    let content = match std::fs::read_to_string(&path) {
-        Ok(content) => content,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            return (Vec::new(), Vec::new());
-        }
-        Err(err) => return (Vec::new(), vec![format!("tuis.toml read error: {err}")]),
+/// Validates the `[[tui]]` entries of `config.toml`.
+///
+/// `value` is the top-level `tui` key, if present. Each entry is validated
+/// independently: an invalid entry is skipped with a diagnostic naming its
+/// field path (`tui[0].key`) and the remaining entries still load.
+pub(crate) fn parse_tuis(value: Option<&toml::Value>) -> (Vec<TuiConfig>, Vec<String>) {
+    let Some(value) = value else {
+        return (Vec::new(), Vec::new());
     };
-    parse_tuis(&content)
-}
-
-fn parse_tuis(content: &str) -> (Vec<TuiConfig>, Vec<String>) {
-    let value = match content.parse::<toml::Value>() {
-        Ok(value) => value,
-        Err(err) => return (Vec::new(), vec![format!("tuis.toml parse error: {err}")]),
-    };
-    let Some(entries) = value.get("tui").and_then(toml::Value::as_array) else {
+    let Some(entries) = value.as_array() else {
         return (
             Vec::new(),
-            vec!["tuis.toml must contain [[tui]] entries".into()],
+            vec!["invalid tui config: tui must be a list of [[tui]] tables; ignoring tui".into()],
         );
     };
     let mut result = Vec::new();
@@ -128,15 +120,105 @@ fn parse_tuis(content: &str) -> (Vec<TuiConfig>, Vec<String>) {
     (result, diagnostics)
 }
 
-/// `tuis.toml` lives next to the main herdr config file, so it follows the
-/// same `HERDR_CONFIG_PATH`/XDG/platform resolution as `config.toml`.
-fn tui_path() -> std::path::PathBuf {
-    super::config_path().with_file_name("tuis.toml")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn parse_tuis_str(content: &str) -> (Vec<TuiConfig>, Vec<String>) {
+        let value: toml::Value = content.parse().unwrap();
+        parse_tuis(value.get("tui"))
+    }
+
+    /// The copy-paste recipe documented in configuration.mdx.
+    const RECIPE: &str = include_str!("../../tests/fixtures/tui-recipe.toml");
+    const CONFIGURATION_DOCS: &str =
+        include_str!("../../docs/next/website/src/content/docs/configuration.mdx");
+
+    /// Returns the first ```toml block after the `### Example recipe` heading.
+    fn documented_recipe() -> &'static str {
+        let (_, after_heading) = CONFIGURATION_DOCS
+            .split_once("\n### Example recipe\n")
+            .expect("configuration.mdx has an `### Example recipe` heading");
+        let (_, block) = after_heading
+            .split_once("```toml\n")
+            .expect("the example recipe has a ```toml block");
+        let (block, _) = block
+            .split_once("```")
+            .expect("the example recipe block is closed");
+        block
+    }
+
+    #[test]
+    fn documented_recipe_matches_fixture_verbatim() {
+        assert_eq!(documented_recipe(), RECIPE);
+    }
+
+    #[test]
+    fn documented_recipe_parses_without_diagnostics() {
+        let (tuis, diagnostics) = parse_tuis_str(RECIPE);
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+        let entries: Vec<_> = tuis
+            .iter()
+            .map(|tui| (tui.id.as_str(), tui.key.as_str(), tui.command.clone()))
+            .collect();
+        assert_eq!(
+            entries,
+            vec![
+                ("lazygit", "g", vec!["lazygit".to_string()]),
+                ("gh-dash", "d", vec!["gh".to_string(), "dash".to_string()]),
+                ("yazi", "f", vec!["yazi".to_string()]),
+                ("btop", "b", vec!["btop".to_string()]),
+            ]
+        );
+        assert!(tuis.iter().all(|tui| tui.kind == TuiKind::Popup));
+    }
+
+    #[test]
+    fn missing_tui_key_yields_no_entries_and_no_diagnostics() {
+        let (tuis, diagnostics) = parse_tuis(None);
+        assert!(tuis.is_empty());
+        assert!(diagnostics.is_empty());
+    }
+
+    #[test]
+    fn non_array_tui_key_is_reported() {
+        let (tuis, diagnostics) = parse_tuis_str("tui = 5\n");
+        assert!(tuis.is_empty());
+        assert_eq!(diagnostics.len(), 1);
+        assert!(diagnostics[0].contains("[[tui]]"), "{diagnostics:?}");
+    }
+
+    #[test]
+    fn diagnostics_keep_indexed_field_paths() {
+        let (tuis, diagnostics) = parse_tuis_str(
+            r#"[[tui]]
+id = "ok"
+key = "o"
+title = "Ok"
+command = ["ok"]
+
+[[tui]]
+id = "bad-key"
+key = "prefix+g"
+title = "Bad"
+command = ["bad"]
+
+[[tui]]
+id = "bad-command"
+key = "c"
+title = "Bad"
+command = [""]
+"#,
+        );
+        assert_eq!(tuis.len(), 1);
+        assert_eq!(
+            diagnostics,
+            vec![
+                "tui[1].key must be one submenu-local key".to_string(),
+                "tui[2].command must contain non-empty argv values".to_string(),
+            ]
+        );
+    }
 
     #[test]
     fn parses_valid_tui_entries() {
@@ -201,7 +283,7 @@ type = "fullscreen"
 
     #[test]
     fn skips_duplicate_and_unsupported_entries_independently() {
-        let (tuis, diagnostics) = parse_tuis(
+        let (tuis, diagnostics) = parse_tuis_str(
             r#"[[tui]]
 id = "same"
 key = "prefix+g"
@@ -228,7 +310,7 @@ platforms = ["not-a-platform"]
 
     #[test]
     fn skips_unknown_launch_type_independently() {
-        let (tuis, diagnostics) = parse_tuis(
+        let (tuis, diagnostics) = parse_tuis_str(
             r#"[[tui]]
 id = "bad"
 key = "x"
