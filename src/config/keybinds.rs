@@ -176,6 +176,21 @@ impl Default for CommandKeybindConfig {
     }
 }
 
+impl CommandKeybindType {
+    /// What an entry of this type runs; `None` for a menu opener, which runs
+    /// nothing itself.
+    fn command_action(self) -> Option<CustomCommandAction> {
+        match self {
+            Self::Shell => Some(CustomCommandAction::Shell),
+            Self::Pane => Some(CustomCommandAction::Pane),
+            Self::Popup => Some(CustomCommandAction::Popup),
+            Self::Tab => Some(CustomCommandAction::Tab),
+            Self::PluginAction => Some(CustomCommandAction::PluginAction),
+            Self::Group => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CustomCommandAction {
     Shell,
@@ -959,14 +974,53 @@ fn append_custom_command_bindings(
             );
             continue;
         }
-        if is_group_opener && command.group.is_none() {
-            diagnostic(
-                diagnostics,
-                format!("group opener missing group id: {entry}; disabling custom command"),
+        // Menu openers first: they open a menu and run nothing themselves.
+        if is_group_opener {
+            let Some(group) = command.group.as_deref() else {
+                diagnostic(
+                    diagnostics,
+                    format!("group opener missing group id: {entry}; disabling custom command"),
+                );
+                continue;
+            };
+            let opener = match source {
+                // The built-in menus are opened by their `keys.*_menu` fields.
+                BindingSource::Default => builtin_group_opener(keybinds, group)
+                    .cloned()
+                    .unwrap_or_default(),
+                BindingSource::User => parse_action_bindings(
+                    &key_field,
+                    &command.key,
+                    registry,
+                    diagnostics,
+                    BindingSource::User,
+                ),
+            };
+            if opener.bindings.is_empty() && source == BindingSource::User {
+                continue;
+            }
+            if command.width.is_some() || command.height.is_some() {
+                diagnostic(
+                    diagnostics,
+                    format!(
+                        "popup size on non-popup custom command: {entry}; ignoring width and height"
+                    ),
+                );
+            }
+            add_group(
+                keybinds,
+                group,
+                command.description.as_deref(),
+                opener,
+                source,
             );
             continue;
         }
-        let member_group = command.group.as_deref().filter(|_| !is_group_opener);
+
+        let Some(action) = command.action_type.command_action() else {
+            continue;
+        };
+        let member_group = command.group.as_deref();
         if let Some(group) = member_group {
             let opened = user_openers.contains(group) || group_is_defined(keybinds, group);
             if !opened {
@@ -980,13 +1034,6 @@ fn append_custom_command_bindings(
             }
         }
         let bindings = match member_group {
-            // The built-in menus are opened by their `keys.*_menu` fields.
-            None if is_group_opener && source == BindingSource::Default => command
-                .group
-                .as_deref()
-                .and_then(|group| builtin_group_opener(keybinds, group))
-                .cloned()
-                .unwrap_or_default(),
             None => parse_action_bindings(
                 &key_field,
                 &command.key,
@@ -996,7 +1043,7 @@ fn append_custom_command_bindings(
             ),
             Some(_) => parse_group_member_bindings(&key_field, &command.key, diagnostics),
         };
-        if bindings.bindings.is_empty() && !(is_group_opener && source == BindingSource::Default) {
+        if bindings.bindings.is_empty() {
             continue;
         }
         if let Some(group) = member_group {
@@ -1023,15 +1070,6 @@ fn append_custom_command_bindings(
             }
         }
 
-        let action = match command.action_type {
-            CommandKeybindType::Shell => CustomCommandAction::Shell,
-            CommandKeybindType::Pane => CustomCommandAction::Pane,
-            CommandKeybindType::Popup => CustomCommandAction::Popup,
-            CommandKeybindType::Tab => CustomCommandAction::Tab,
-            CommandKeybindType::PluginAction | CommandKeybindType::Group => {
-                CustomCommandAction::PluginAction
-            }
-        };
         let (width, height) = if action == CustomCommandAction::Popup {
             (command.width, command.height)
         } else {
@@ -1045,18 +1083,6 @@ fn append_custom_command_bindings(
             }
             (None, None)
         };
-        if is_group_opener {
-            if let Some(group) = command.group.as_deref() {
-                add_group(
-                    keybinds,
-                    group,
-                    command.description.as_deref(),
-                    bindings,
-                    source,
-                );
-            }
-            continue;
-        }
         let Some(group) = member_group else {
             push_custom_command(keybinds, command, bindings, action, width, height);
             continue;
