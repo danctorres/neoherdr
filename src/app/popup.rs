@@ -268,6 +268,53 @@ mod tests {
         assert!(app.state.popup_pane.is_some());
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn failed_popup_tui_stays_open_until_its_exit_notice_closes() {
+        let mut app = app_with_popup();
+        let popup = app.state.popup_pane.clone().unwrap();
+        let terminal = app.state.terminals.get_mut(&popup.terminal_id).unwrap();
+        terminal.cwd = std::env::temp_dir();
+        terminal.hold_on_failure = Some("gh".into());
+        let died = |exit_status| crate::events::AppEvent::PaneDied {
+            pane_id: popup.pane_id,
+            exit_reason: crate::platform::ChildExitReason::Exited,
+            exit_status,
+        };
+
+        app.handle_internal_event(died(Some(1)));
+
+        assert_eq!(app.state.popup_pane, Some(popup.clone()));
+        assert_eq!(
+            app.state.terminals[&popup.terminal_id].hold_on_failure,
+            None
+        );
+        assert!(app.terminal_runtimes.get(&popup.terminal_id).is_some());
+
+        // Enter ends the notice process, which closes the popup.
+        app.handle_internal_event(died(Some(0)));
+        assert!(app.state.popup_pane.is_none());
+    }
+
+    #[test]
+    fn popup_tui_exiting_cleanly_closes() {
+        let mut app = app_with_popup();
+        let popup = app.state.popup_pane.clone().unwrap();
+        app.state
+            .terminals
+            .get_mut(&popup.terminal_id)
+            .unwrap()
+            .hold_on_failure = Some("lazygit".into());
+
+        app.handle_internal_event(crate::events::AppEvent::PaneDied {
+            pane_id: popup.pane_id,
+            exit_reason: crate::platform::ChildExitReason::Exited,
+            exit_status: Some(0),
+        });
+
+        assert!(app.state.popup_pane.is_none());
+    }
+
     #[test]
     fn popup_close_api_closes_only_active_popup() {
         let mut app = app_with_popup();
