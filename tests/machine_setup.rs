@@ -383,7 +383,7 @@ fn machine_setup_accepts_a_native_windows_probe_without_a_posix_probe() {
     assert_eq!(order.first().copied(), Some("windows"), "{}", result.output);
     assert!(!order.contains(&"posix-probe"), "{}", result.output);
     assert!(
-        result.output.contains("installation cancelled"),
+        result.output.contains("remote is windows-x86_64"),
         "{}",
         result.output
     );
