@@ -137,9 +137,12 @@ fn menu_ids(keybinds: &Keybinds) -> Vec<(String, String, String)> {
         .collect()
 }
 
+/// Every keybind, grouped for the help panel. Menu members whose action
+/// `keep` rejects are left out, as they are in the which-key hint.
 pub(crate) fn keybind_help_groups(
     keybinds: &Keybinds,
     prefixes: &[crate::config::KeyCombo],
+    keep: impl Fn(&crate::config::KeyGroupAction) -> bool,
 ) -> Vec<KeybindHelpGroup> {
     let mut top = vec![entry(
         crate::config::format_prefix_combos(prefixes),
@@ -177,7 +180,7 @@ pub(crate) fn keybind_help_groups(
         ),
     ];
     for (id, description, opener) in menu_ids(keybinds) {
-        let entries = crate::input::group_entries(keybinds, &id);
+        let entries = crate::input::group_entries_where(keybinds, &id, &keep);
         if !entries.is_empty() {
             groups.push((
                 Cow::Owned(format!("{description} menu ({opener})")),

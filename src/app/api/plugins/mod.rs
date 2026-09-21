@@ -49,18 +49,34 @@ impl App {
         &mut self,
         mutation: impl FnOnce(&mut crate::app::state::InstalledPluginRegistry) -> T,
     ) -> std::io::Result<T> {
+        self.update_installed_plugins_and_declined(|plugins, _| mutation(plugins))
+    }
+
+    /// [`Self::update_installed_plugins`] that also edits the persisted set of
+    /// declined bundled plugins. Ephemeral registries have nothing to decline.
+    fn update_installed_plugins_and_declined<T>(
+        &mut self,
+        mutation: impl FnOnce(
+            &mut crate::app::state::InstalledPluginRegistry,
+            &mut std::collections::BTreeSet<String>,
+        ) -> T,
+    ) -> std::io::Result<T> {
         if !self.policy.persist_plugin_registry {
-            return Ok(mutation(&mut self.state.installed_plugins));
+            return Ok(mutation(
+                &mut self.state.installed_plugins,
+                &mut std::collections::BTreeSet::new(),
+            ));
         }
-        let (result, _) = crate::persist::plugin_registry::update(|entries| {
-            let mut registry = entries
-                .drain(..)
-                .map(|plugin| (plugin.plugin_id.clone(), plugin))
-                .collect();
-            let result = mutation(&mut registry);
-            *entries = registry.into_values().collect();
-            result
-        })?;
+        let (result, _) =
+            crate::persist::plugin_registry::update_with_declined(|entries, declined| {
+                let mut registry = entries
+                    .drain(..)
+                    .map(|plugin| (plugin.plugin_id.clone(), plugin))
+                    .collect();
+                let result = mutation(&mut registry, declined);
+                *entries = registry.into_values().collect();
+                result
+            })?;
         self.refresh_installed_plugins()?;
         Ok(result)
     }
@@ -79,7 +95,8 @@ impl App {
         if let Err(err) = env::ensure_plugin_user_dirs(&plugin) {
             return encode_error(id, "plugin_user_dir_create_failed", err.to_string());
         }
-        if let Err(err) = self.update_installed_plugins(|plugins| {
+        if let Err(err) = self.update_installed_plugins_and_declined(|plugins, declined| {
+            declined.remove(&plugin.plugin_id);
             plugins.insert(plugin.plugin_id.clone(), plugin.clone());
         }) {
             return encode_error(id, "plugin_registry_save_failed", err.to_string());
@@ -118,27 +135,21 @@ impl App {
         let Some(plugin_id) = normalize_plugin_id(&params.plugin_id) else {
             return invalid_plugin_id(id);
         };
-        let removed = match self.update_installed_plugins(|plugins| {
-            if let Some(plugin) = plugins.get_mut(&plugin_id) {
-                if crate::plugin_paths::is_builtin_plugin(plugin) {
-                    plugin.enabled = false;
-                    return true;
-                }
+        let removed = match self.update_installed_plugins_and_declined(|plugins, declined| {
+            let removed = plugins.remove(&plugin_id).is_some();
+            // A removed bundled plugin stays removed instead of being
+            // registered again on the next start.
+            if removed && crate::builtin_plugin_assets::is_bundled(&plugin_id) {
+                declined.insert(plugin_id.clone());
             }
-            plugins.remove(&plugin_id).is_some()
+            removed
         }) {
             Ok(removed) => removed,
             Err(err) => {
                 return encode_error(id, "plugin_registry_save_failed", err.to_string());
             }
         };
-        if removed
-            && !self
-                .state
-                .installed_plugins
-                .get(&plugin_id)
-                .is_some_and(crate::plugin_paths::is_builtin_plugin)
-        {
+        if removed {
             // Drop plugin_panes records for this plugin (panes keep running).
             self.state
                 .plugin_panes
@@ -1006,6 +1017,75 @@ action = "bootstrap"
             result.contains("plugin_linked"),
             "expected plugin_linked: {result}"
         );
+    }
+
+    #[test]
+    fn removed_bundled_plugin_stays_removed_until_linked_again() {
+        let _guard = crate::config::test_config_env_lock().lock().unwrap();
+        let previous_config_home = std::env::var_os("XDG_CONFIG_HOME");
+        let base = unique_temp_path("bundled-removal");
+        std::env::set_var("XDG_CONFIG_HOME", &base);
+        let restart = || crate::app::load_plugin_registry(true);
+        let request = |app: &mut App, method| {
+            let response = app.handle_api_request(Request {
+                id: "bundled".into(),
+                method,
+            });
+            serde_json::from_str::<serde_json::Value>(&response).unwrap()
+        };
+        let mut app = test_app();
+        app.policy.persist_plugin_registry = true;
+
+        let registry = restart();
+        let bundled_root = registry["worktrunk"].plugin_root.clone();
+
+        // Disabling survives a restart and keeps the plugin registered.
+        request(
+            &mut app,
+            Method::PluginDisable(PluginSetEnabledParams {
+                plugin_id: "worktrunk".into(),
+            }),
+        );
+        assert!(!restart()["worktrunk"].enabled);
+
+        let unlinked = request(
+            &mut app,
+            Method::PluginUnlink(PluginUnlinkParams {
+                plugin_id: "worktrunk".into(),
+            }),
+        );
+        let after_restart = restart();
+        let bundled_script = std::path::Path::new(&bundled_root).join("bin/open");
+        let _ = std::fs::remove_file(&bundled_script);
+        let after_second_restart = restart();
+        let script_refreshed = bundled_script.exists();
+
+        request(
+            &mut app,
+            Method::PluginLink(PluginLinkParams {
+                path: bundled_root.clone(),
+                enabled: true,
+                source: None,
+            }),
+        );
+        let relinked = restart();
+        let script_restored = bundled_script.exists();
+
+        match previous_config_home {
+            Some(previous) => std::env::set_var("XDG_CONFIG_HOME", previous),
+            None => std::env::remove_var("XDG_CONFIG_HOME"),
+        }
+        let _ = std::fs::remove_dir_all(&base);
+
+        assert_eq!(unlinked["result"]["removed"], true);
+        assert!(!after_restart.contains_key("worktrunk"));
+        assert!(!after_second_restart.contains_key("worktrunk"));
+        assert!(
+            !script_refreshed,
+            "declined plugin files must not be refreshed"
+        );
+        assert!(relinked["worktrunk"].enabled);
+        assert!(script_restored);
     }
 
     #[test]
@@ -2585,7 +2665,7 @@ command = ["sh", "-c", "printf %s ${{HERDR_PANE_ID-unset}} > '{}'; sleep 1"]
         let root = base.join("plugin");
         write_manifest(&root);
         let plugin = load_plugin_manifest(&root.display().to_string(), false).unwrap();
-        crate::persist::plugin_registry::update(|plugins| {
+        crate::persist::plugin_registry::update_with_declined(|plugins, _| {
             plugins.retain(|entry| entry.plugin_id != plugin.plugin_id);
             plugins.push(plugin.clone());
         })
