@@ -42,6 +42,18 @@ pub(crate) fn poll_fd_readable(fd: std::os::fd::RawFd, timeout_ms: i32) -> std::
     }
 }
 
+/// Argv that prints `message` below the pane's existing output and exits once
+/// the user presses Enter.
+pub(crate) fn exit_notice_argv(message: &str) -> Vec<String> {
+    vec![
+        "/bin/sh".to_owned(),
+        "-c".to_owned(),
+        r#"printf '\n%s\n' "$1"; IFS= read -r _ || true"#.to_owned(),
+        "herdr".to_owned(),
+        message.to_owned(),
+    ]
+}
+
 pub(crate) fn shutdown_client_stream(stream: &crate::ipc::LocalStream) -> std::io::Result<()> {
     let crate::ipc::LocalStream::UdSocket(stream) = stream;
     stream.inner().shutdown(std::net::Shutdown::Both)
@@ -585,6 +597,27 @@ mod tests {
                 .unwrap();
             assert_eq!(signal, Some(super::super::ServerQuitSignal::Terminate));
         });
+    }
+
+    #[test]
+    fn exit_notice_prints_the_message_and_exits_on_enter() {
+        use std::io::Write;
+
+        let message = "[herdr] tool exited with status 1 — press Enter to close";
+        let argv = exit_notice_argv(message);
+        let mut child = std::process::Command::new(&argv[0])
+            .args(&argv[1..])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(b"\n").unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout),
+            format!("\n{message}\n")
+        );
     }
 
     #[test]

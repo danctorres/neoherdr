@@ -20,6 +20,15 @@ const API_NOTIFICATION_RATE_LIMIT: Duration = Duration::from_secs(1);
 #[cfg(windows)]
 const WINDOWS_POWERSHELL_AGENT_EXIT_RESPAWN_GRACE: Duration = Duration::from_secs(2);
 
+fn exit_notice_message(label: &str, exit_status: Option<i32>) -> String {
+    match exit_status {
+        Some(status) => {
+            format!("[herdr] {label} exited with status {status} — press Enter to close")
+        }
+        None => format!("[herdr] {label} exited abnormally — press Enter to close"),
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RuntimeExitAction {
     RespawnShell,
@@ -103,6 +112,7 @@ impl App {
                 AppEvent::PaneDied {
                     pane_id,
                     exit_reason: crate::platform::ChildExitReason::Exited,
+                    exit_status: Some(0),
                 }
             }
             ev => ev,
@@ -207,14 +217,21 @@ impl App {
         }
 
         let mut worktree_restore_updates = Vec::new();
-        if let AppEvent::PaneDied { pane_id, .. } = &ev {
+        if let AppEvent::PaneDied {
+            pane_id,
+            exit_status,
+            ..
+        } = &ev
+        {
             if self
                 .state
                 .popup_pane
                 .as_ref()
                 .is_some_and(|popup| popup.pane_id == *pane_id)
             {
-                self.close_popup_pane();
+                if !self.hold_failed_launch_exit(*pane_id, *exit_status) {
+                    self.close_popup_pane();
+                }
                 return Vec::new();
             }
             if worktree_restore_failed {
@@ -256,6 +273,9 @@ impl App {
                     self.refresh_new_herdr_toast_context_for_update(&update, &previous_toast);
                     self.emit_pane_state_update(&update);
                 }
+                if self.hold_failed_launch_exit(*pane_id, *exit_status) {
+                    return worktree_restore_updates;
+                }
                 if self.runtime_exit_action(*pane_id) == RuntimeExitAction::RespawnShell
                     && self.respawn_shell_for_launch_pane(*pane_id, true)
                 {
@@ -272,6 +292,7 @@ impl App {
             AppEvent::PaneDied {
                 pane_id,
                 exit_reason,
+                ..
             } if exit_reason.requires_session_checkpoint() && self.find_pane(*pane_id).is_some() && !self.overlay_panes.contains_key(pane_id)
         );
         if checkpointed_pane_exit {
@@ -574,6 +595,74 @@ impl App {
                 self.state.shell_mode,
             ))
         }
+    }
+
+    /// Keeps a failed hold-on-failure launch open: the pane's final output stays
+    /// visible and a notice process waits for Enter, whose exit then closes the
+    /// pane through the normal path. Returns false when the pane should close
+    /// now (clean exit, no hold flag, or the notice could not start).
+    fn hold_failed_launch_exit(
+        &mut self,
+        pane_id: crate::layout::PaneId,
+        exit_status: Option<i32>,
+    ) -> bool {
+        if exit_status == Some(0) {
+            return false;
+        }
+        let terminal_id = match self.state.popup_pane.as_ref() {
+            Some(popup) if popup.pane_id == pane_id => popup.terminal_id.clone(),
+            _ => match self.find_pane(pane_id) {
+                Some((_, pane_state)) => pane_state.attached_terminal_id.clone(),
+                None => return false,
+            },
+        };
+        let Some(terminal) = self.state.terminals.get_mut(&terminal_id) else {
+            return false;
+        };
+        // The notice process closes the pane however it exits.
+        let Some(label) = terminal.hold_on_failure.take() else {
+            return false;
+        };
+        let cwd = terminal.cwd.clone();
+        let (history, (rows, cols)) = match self.terminal_runtimes.get(&terminal_id) {
+            Some(runtime) => (runtime.snapshot_history(), runtime.current_size()),
+            None => (None, self.state.estimate_pane_size()),
+        };
+        let argv = crate::platform::exit_notice_argv(&exit_notice_message(&label, exit_status));
+        let runtime = match crate::terminal::TerminalRuntime::spawn_argv_command_with_history(
+            pane_id,
+            rows,
+            cols,
+            cwd,
+            &argv,
+            &crate::pane::PaneLaunchEnv::from_extra(Vec::new()).without_pane_identity(),
+            crate::pane::AgentDetection::Disabled,
+            self.state.pane_scrollback_limit_bytes,
+            self.state.host_terminal_theme,
+            self.state.host_terminal_appearance,
+            history.as_deref(),
+            self.event_tx.clone(),
+            self.render_notify.clone(),
+            self.render_dirty.clone(),
+        ) {
+            Ok(runtime) => runtime,
+            Err(err) => {
+                tracing::warn!(
+                    pane = pane_id.raw(),
+                    terminal = %terminal_id,
+                    err = %err,
+                    "failed to keep failed launch pane open"
+                );
+                return false;
+            }
+        };
+        self.terminal_runtimes.insert(terminal_id.clone(), runtime);
+        if let Some(terminal) = self.state.terminals.get_mut(&terminal_id) {
+            terminal.clear_agent_runtime_identity_after_respawn();
+        }
+        self.render_dirty.request_generic();
+        self.render_notify.notify_one();
+        true
     }
 
     fn respawn_shell_for_launch_pane(
@@ -2023,6 +2112,7 @@ mod tests {
         app.handle_internal_event(AppEvent::PaneDied {
             pane_id: overlay_pane,
             exit_reason: crate::platform::ChildExitReason::Exited,
+            exit_status: Some(0),
         });
 
         let overlay_tab = &app.state.workspaces[0].tabs[0];
@@ -2052,6 +2142,7 @@ mod tests {
         app.handle_internal_event(AppEvent::PaneDied {
             pane_id: dead_pane,
             exit_reason: crate::platform::ChildExitReason::Exited,
+            exit_status: Some(0),
         });
 
         let events = event_hub.events_after(0);
@@ -2210,6 +2301,7 @@ mod tests {
         app.handle_internal_event(AppEvent::PaneDied {
             pane_id: overlay_pane,
             exit_reason: crate::platform::ChildExitReason::Exited,
+            exit_status: Some(0),
         });
 
         let events = event_hub.events_after(0);
@@ -2236,6 +2328,7 @@ mod tests {
         app.handle_internal_event(AppEvent::PaneDied {
             pane_id: overlay_pane,
             exit_reason: crate::platform::ChildExitReason::Exited,
+            exit_status: Some(0),
         });
 
         let tab = &app.state.workspaces[0].tabs[0];
@@ -2256,6 +2349,7 @@ mod tests {
         app.handle_internal_event(AppEvent::PaneDied {
             pane_id: overlay_pane,
             exit_reason: crate::platform::ChildExitReason::Exited,
+            exit_status: Some(0),
         });
 
         let tab = &app.state.workspaces[0].tabs[0];
@@ -2298,6 +2392,7 @@ mod tests {
         app.handle_internal_event(AppEvent::PaneDied {
             pane_id,
             exit_reason: crate::platform::ChildExitReason::Exited,
+            exit_status: Some(0),
         });
 
         assert!(

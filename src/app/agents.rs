@@ -416,7 +416,8 @@ impl App {
 
     /// Opens `kind` in a new focused tab of the active workspace. The agent is
     /// the root pane's process, so the tab closes through the normal
-    /// last-pane path when the agent exits.
+    /// last-pane path when the agent exits cleanly; a failed agent keeps its
+    /// pane open with an exit notice.
     pub(super) fn open_agent_tab(
         &mut self,
         kind: &str,
@@ -444,7 +445,7 @@ impl App {
             .workspaces
             .get_mut(ws_idx)
             .ok_or(AgentOpenTabError::NoActiveWorkspace)?;
-        let (tab_idx, terminal, runtime) = workspace
+        let (tab_idx, mut terminal, runtime) = workspace
             .create_tab_argv_command(
                 rows.max(4),
                 cols.max(10),
@@ -456,6 +457,7 @@ impl App {
                 host_terminal_appearance,
             )
             .map_err(|err| AgentOpenTabError::SpawnFailed(err.to_string()))?;
+        terminal.hold_on_failure = Some(executable.to_owned());
         let tab = &mut workspace.tabs[tab_idx];
         tab.set_custom_name(crate::detect::agent_label(agent).to_owned());
         let pane_id = tab.root_pane;

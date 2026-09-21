@@ -405,8 +405,9 @@ mod unix_common;
 pub(crate) mod unix_image_files;
 #[cfg(unix)]
 pub(crate) use unix_common::{
-    begin_cli_output, end_cli_output, forward_remote_bridge_stdio, ignore_server_hangup,
-    local_stream_peer_description, spawn_server_signal_monitor, RemoteBridgeWake,
+    begin_cli_output, end_cli_output, exit_notice_argv, forward_remote_bridge_stdio,
+    ignore_server_hangup, local_stream_peer_description, spawn_server_signal_monitor,
+    RemoteBridgeWake,
 };
 
 mod client_state;

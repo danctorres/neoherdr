@@ -4729,6 +4729,7 @@ async fn host_shutdown_preserves_panes_from_queued_and_selected_death_events() {
     let event = || AppEvent::PaneDied {
         pane_id,
         exit_reason: crate::platform::ChildExitReason::Exited,
+        exit_status: None,
     };
     server.app.event_tx.try_send(event()).unwrap();
     server
@@ -4786,7 +4787,8 @@ async fn pane_death_reconciles_each_client_view_and_focus() {
     assert!(
         server.handle_internal_event_with_forwarding(AppEvent::PaneDied {
             pane_id: dead_pane,
-            exit_reason: crate::platform::ChildExitReason::Exited
+            exit_reason: crate::platform::ChildExitReason::Exited,
+            exit_status: Some(0),
         })
     );
 
@@ -4855,7 +4857,8 @@ async fn pane_death_reapplies_controller_geometry() {
     assert!(
         server.handle_internal_event_with_forwarding(AppEvent::PaneDied {
             pane_id: dead_pane,
-            exit_reason: crate::platform::ChildExitReason::Exited
+            exit_reason: crate::platform::ChildExitReason::Exited,
+            exit_status: Some(0),
         })
     );
 
@@ -5040,7 +5043,8 @@ fn expected_worktree_runtime_exit_does_not_release_agent() {
     assert!(
         server.handle_internal_event_with_forwarding(AppEvent::PaneDied {
             pane_id,
-            exit_reason: crate::platform::ChildExitReason::Exited
+            exit_reason: crate::platform::ChildExitReason::Exited,
+            exit_status: Some(0),
         })
     );
 

@@ -76,7 +76,9 @@ local key inside the menu, never a top-level prefix binding. A popup entry
 uses the focused pane's working directory when available. Executable names are
 resolved from the system `PATH`. If a command is absent, its popup shows a
 short message and waits for Enter, so entries for tools you have not installed
-are harmless. Invalid entries are reported independently, with their field
+are harmless. A TUI that exits with an error keeps its popup or tab open with
+its output and a `press Enter to close` line; a clean exit closes it at once.
+Invalid entries are reported independently, with their field
 path such as `tui[0].key`, so valid entries remain usable.
 
 Reload the running server after editing with `herdr server reload-config`.
