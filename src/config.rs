@@ -7,6 +7,7 @@ mod sidebar;
 mod sound;
 mod tab_bar;
 mod theme;
+mod tuis;
 mod window_title;
 mod write;
 
@@ -38,7 +39,8 @@ pub use self::{
     window_title::{WindowTitlePart, WindowTitleTemplate, WindowTitleToken},
 };
 
-pub(crate) use self::keybinds::parse_key_combo;
+pub(crate) use self::keybinds::{parse_key_combo, KeyGroupAction, WORKSPACE_GROUP};
+pub(crate) use self::tuis::{load_tuis, TuiConfig, TuiKind};
 pub(crate) use self::write::{update_file_at, write_edit, ConfigEdit};
 pub(crate) use self::{
     io::upsert_top_level_bool,
@@ -181,8 +183,13 @@ impl Config {
             keys: model::KeysConfigOverlay,
         }
 
-        let mut keys = self.keys.local_profile(&self.keybinds());
+        let keybinds = self.keybinds();
+        let mut keys = self.keys.local_profile(&keybinds);
         keys.set_prefix(format_key_combo(self.prefix_key()));
+        let tui_commands = self.tui_command_configs();
+        if !tui_commands.is_empty() {
+            keys.set_commands(tui_commands);
+        }
         toml::to_string_pretty(&KeysProfile { keys })
     }
 }
@@ -201,7 +208,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn local_keybindings_profile_includes_defaults_and_excludes_commands() {
+    fn local_keybindings_profile_includes_defaults_and_omits_user_commands() {
         let config: Config = toml::from_str(
             r#"
 [keys]
@@ -219,7 +226,8 @@ command = "lazygit"
         assert!(profile.contains("[keys]"));
         assert!(profile.contains("prefix = \"ctrl+a\""));
         assert!(profile.contains("new_tab = \"prefix+t\""));
-        assert!(profile.contains("next_tab = \"prefix+n\""));
+        assert!(profile.contains("next_tab = \"prefix+]\""));
+        assert!(profile.contains("workspace_menu = \"prefix+w\""));
         assert!(!profile.contains("lazygit"));
         assert!(!profile.contains("command ="));
         assert!(!profile.contains("[[keys.command]]"));
@@ -240,6 +248,54 @@ prefix = "ctrl+"
 
         assert!(profile.contains("prefix = \"ctrl+b\""));
         assert_eq!(keybinds.prefix, config.prefix_key());
+    }
+
+    #[test]
+    fn local_keybindings_profile_publishes_configured_tuis() {
+        let mut config = Config::default();
+        config.tuis = vec![TuiConfig {
+            id: "lazygit".into(),
+            key: "g".into(),
+            title: "lazygit".into(),
+            description: Some("open lazygit".into()),
+            command: vec!["lazygit".into()],
+            platforms: None,
+            kind: crate::config::TuiKind::Popup,
+            width: None,
+            height: None,
+        }];
+
+        let profile = config.local_keybindings_profile_toml().unwrap();
+        assert!(profile.contains("command = \"tui:lazygit\""), "{profile}");
+        assert!(profile.contains("key = \"g\""), "{profile}");
+        let keybinds = keybindings_from_profile_toml(&profile).unwrap();
+        assert!(
+            keybinds
+                .keybinds
+                .custom_commands
+                .iter()
+                .any(|command| command.command == "tui:lazygit"),
+            "{keybinds:?}"
+        );
+    }
+
+    #[test]
+    fn local_keybindings_profile_publishes_tuis_on_builtin_group_keys() {
+        let mut config = Config::default();
+        config.tuis = vec![TuiConfig {
+            id: "yazi".into(),
+            key: "f".into(),
+            title: "yazi".into(),
+            description: Some("open yazi".into()),
+            command: vec!["yazi".into()],
+            platforms: None,
+            kind: crate::config::TuiKind::Popup,
+            width: None,
+            height: None,
+        }];
+
+        let profile = config.local_keybindings_profile_toml().unwrap();
+        assert!(profile.contains("tui:yazi"), "{profile}");
     }
 
     #[test]
@@ -271,7 +327,7 @@ zoom = "prefix+?"
         let config: Config = toml::from_str(
             r#"
 [keys]
-prefix = "n"
+prefix = "x"
 "#,
         )
         .unwrap();
@@ -279,9 +335,9 @@ prefix = "n"
         let profile = config.local_keybindings_profile_toml().unwrap();
         let round_tripped: Config = toml::from_str(&profile).unwrap();
 
-        assert!(profile.contains("prefix = \"n\""));
-        assert!(!profile.contains("next_tab = \"prefix+n\""));
-        assert!(round_tripped.keybinds().next_tab.bindings.is_empty());
+        assert!(profile.contains("prefix = \"x\""));
+        assert!(!profile.contains("close_pane = \"prefix+x\""));
+        assert!(round_tripped.keybinds().close_pane.bindings.is_empty());
     }
 
     #[test]
@@ -336,8 +392,8 @@ tabs = "bogus"
         let config: Config = toml::from_str(
             r#"
 [[keys.command]]
-key = "prefix+n"
-command = "echo next"
+key = "prefix+x"
+command = "echo close"
 "#,
         )
         .unwrap();
@@ -346,9 +402,9 @@ command = "echo next"
         let round_tripped: Config = toml::from_str(&profile).unwrap();
 
         assert!(!profile.contains("[[keys.command]]"));
-        assert!(!profile.contains("command ="));
-        assert!(profile.contains("next_tab = \"\""));
-        assert!(round_tripped.keybinds().next_tab.bindings.is_empty());
+        assert!(!profile.contains("echo close"));
+        assert!(profile.contains("close_pane = \"\""));
+        assert!(round_tripped.keybinds().close_pane.bindings.is_empty());
     }
 
     #[test]
@@ -380,6 +436,23 @@ command = "echo one"
         assert!(switch_tab_labels
             .iter()
             .all(|label| label.starts_with("prefix+")));
+    }
+
+    #[test]
+    fn show_which_key_defaults_to_true_and_round_trips() {
+        assert!(Config::default().keys.show_which_key);
+
+        let config: Config = toml::from_str("[keys]\nshow_which_key = false\n").unwrap();
+        assert!(!config.keys.show_which_key);
+
+        let profile = config.local_keybindings_profile_toml().unwrap();
+        assert!(profile.contains("show_which_key = false"));
+        let round_tripped: Config = toml::from_str(&profile).unwrap();
+        assert!(!round_tripped.keys.show_which_key);
+
+        let default_profile = Config::default().local_keybindings_profile_toml().unwrap();
+        let round_tripped_default: Config = toml::from_str(&default_profile).unwrap();
+        assert!(round_tripped_default.keys.show_which_key);
     }
 
     #[test]

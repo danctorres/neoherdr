@@ -1,0 +1,70 @@
+id = "worktrunk"
+name = "Worktrunk"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Keybindable which-key actions that drive the wt (worktrunk) CLI for worktree switch, list, remove, and merge"
+platforms = ["linux", "macos"]
+
+[[actions]]
+id = "switch"
+title = "Worktrunk: switch or create worktree"
+description = "Open the wt switch picker for the focused pane's directory"
+contexts = ["pane"]
+command = ["sh", "bin/open", "switch"]
+
+[[actions]]
+id = "list"
+title = "Worktrunk: list worktrees"
+description = "Show wt status for the focused pane's directory"
+contexts = ["pane"]
+command = ["sh", "bin/open", "list"]
+
+[[actions]]
+id = "remove"
+title = "Worktrunk: remove worktree"
+description = "Remove the focused pane's worktree with wt"
+contexts = ["pane"]
+command = ["sh", "bin/open", "remove"]
+
+[[actions]]
+id = "merge"
+title = "Worktrunk: merge worktree"
+description = "Merge the focused pane's worktree with wt"
+contexts = ["pane"]
+command = ["sh", "bin/open", "merge"]
+
+[[panes]]
+id = "switch"
+title = "wt switch"
+description = "Interactive wt switch picker"
+placement = "popup"
+width = "90%"
+height = "90%"
+command = ['sh', '-c', '''wt switch -x "${HERDR_BIN_PATH:-herdr}" -- worktree open --cwd '{{ repo_path }}' --path '{{ worktree_path }}' --focus; code=$?; if [ "$code" -ne 0 ]; then printf "\n[worktrunk] wt switch failed with exit code %s. Press Enter to close.\n" "$code"; IFS= read -r _ || true; fi; exit "$code"''']
+
+[[panes]]
+id = "list"
+title = "wt list"
+description = "wt worktree status table"
+placement = "popup"
+width = "90%"
+height = "90%"
+command = ['sh', '-c', 'wt list; code=$?; if [ "$code" -ne 0 ]; then printf "\n[worktrunk] wt list failed with exit code %s. Press Enter to close.\n" "$code"; IFS= read -r _ || true; fi; exit "$code"']
+
+[[panes]]
+id = "remove"
+title = "wt remove"
+description = "wt worktree removal with its own approval prompt"
+placement = "popup"
+width = "90%"
+height = "90%"
+command = ['sh', '-c', 'wt remove; code=$?; if [ "$code" -ne 0 ]; then printf "\n[worktrunk] wt remove failed with exit code %s. Press Enter to close.\n" "$code"; IFS= read -r _ || true; fi; exit "$code"']
+
+[[panes]]
+id = "merge"
+title = "wt merge"
+description = "wt merge workflow with its own prompts"
+placement = "popup"
+width = "90%"
+height = "90%"
+command = ['sh', '-c', 'wt merge; code=$?; if [ "$code" -ne 0 ]; then printf "\n[worktrunk] wt merge failed with exit code %s. Press Enter to close.\n" "$code"; IFS= read -r _ || true; fi; exit "$code"']

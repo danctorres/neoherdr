@@ -680,6 +680,7 @@ impl ClientShellState {
                 self.hits.navigator_rows = rendered.navigator_rows;
                 self.hits.navigator_scrollbar = rendered.navigator_scrollbar;
                 self.hits.navigator_scroll_metrics = rendered.navigator_scroll_metrics;
+                self.hits.marketplace_rows = rendered.marketplace_rows;
                 self.hits.worktree_search = rendered.worktree_search;
                 self.hits.worktree_rows = rendered.worktree_rows;
                 self.hits.help_popup = rendered.help_popup;
@@ -700,6 +701,18 @@ impl ClientShellState {
                 rendered.cursor
             };
             frame.replace_from_ratatui_buffer_preserving_effects(&composed, cursor);
+        }
+        // Single `Option` guard on global overlay state: no per-pane/per-tab
+        // loop, so this adds no multiplicative render cost.
+        if self.key_hint.as_ref().is_some_and(|hint| hint.visible) {
+            let mut composed = frame.to_ratatui_buffer()?;
+            let area = self.key_hint.as_ref().and_then(|hint| {
+                render::render_key_hint(&mut composed, hint, &self.config.palette)
+            });
+            if let Some(area) = area {
+                occlusion.cover(area);
+            }
+            frame.replace_from_ratatui_buffer_preserving_effects(&composed, None);
         }
         if let Some(ClientShellOverlay::Help(help)) = self.overlay.as_mut() {
             help.scroll = help.scroll.min(self.hits.help_max_scroll);

@@ -989,6 +989,7 @@ impl From<crate::config::CustomCommandAction> for ClientShellCommandAction {
             crate::config::CustomCommandAction::Shell => Self::Shell,
             crate::config::CustomCommandAction::Pane => Self::Pane,
             crate::config::CustomCommandAction::Popup => Self::Popup,
+            crate::config::CustomCommandAction::Tab => Self::Pane,
             crate::config::CustomCommandAction::PluginAction => Self::PluginAction,
         }
     }

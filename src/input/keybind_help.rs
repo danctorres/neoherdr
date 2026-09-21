@@ -8,7 +8,7 @@ use crate::{
 };
 
 pub(crate) type KeybindHelpEntry = (String, Cow<'static, str>);
-pub(crate) type KeybindHelpGroup = (&'static str, Vec<KeybindHelpEntry>);
+pub(crate) type KeybindHelpGroup = (Cow<'static, str>, Vec<KeybindHelpEntry>);
 
 pub(crate) fn keybind_help_text_char(key: &TerminalKey) -> Option<char> {
     if !key.modifiers.difference(KeyModifiers::SHIFT).is_empty() {
@@ -31,9 +31,9 @@ fn binding_label(bindings: &ActionKeybinds) -> String {
     bindings.label().unwrap_or_else(|| "unset".to_owned())
 }
 
-fn indexed_label(bindings: &[IndexedKeybind]) -> String {
+fn indexed_label(bindings: &[IndexedKeybind]) -> Option<String> {
     if bindings.is_empty() {
-        return "unset".to_owned();
+        return None;
     }
     let mut parts = Vec::new();
     let mut index = 0;
@@ -46,7 +46,7 @@ fn indexed_label(bindings: &[IndexedKeybind]) -> String {
             index += 1;
         }
     }
-    parts.join(" / ")
+    Some(parts.join(" / "))
 }
 
 fn indexed_range_prefix(bindings: &[IndexedKeybind]) -> Option<&str> {
@@ -61,27 +61,95 @@ fn indexed_range_prefix(bindings: &[IndexedKeybind]) -> Option<&str> {
     Some(prefix)
 }
 
+/// Every built-in top-level binding as `(full label, description)`: menu
+/// openers (described as `+menu`), bound actions, and indexed actions.
+/// Unbound actions are omitted; they live in the menus.
+fn top_level_entries(keybinds: &Keybinds) -> Vec<KeybindHelpEntry> {
+    let mut entries = Vec::new();
+    for group in &keybinds.groups {
+        if let Some(label) = group.opener.label() {
+            entries.push((label, Cow::Owned(format!("+{}", group.description))));
+        }
+    }
+    for (bindings, action) in super::keybindings::flat_action_bindings(keybinds) {
+        if let Some(label) = bindings.label() {
+            entries.push((label, Cow::Borrowed(action.description())));
+        }
+    }
+    for (bindings, description) in [
+        (&keybinds.switch_tab, "switch tab 1-9"),
+        (&keybinds.switch_workspace, "switch workspace 1-9"),
+        (&keybinds.focus_agent, "focus agent 1-9"),
+    ] {
+        if let Some(label) = indexed_label(bindings) {
+            entries.push((label, Cow::Borrowed(description)));
+        }
+    }
+    entries
+}
+
+/// Ungrouped custom commands as `(full label, description)`.
+fn custom_command_entries(keybinds: &Keybinds) -> Vec<KeybindHelpEntry> {
+    keybinds
+        .custom_commands
+        .iter()
+        .filter(|binding| binding.group.is_none())
+        .map(|binding| {
+            let description = binding
+                .description
+                .clone()
+                .map(Cow::Owned)
+                .unwrap_or(Cow::Borrowed("custom command"));
+            (binding.label.clone(), description)
+        })
+        .collect()
+}
+
+/// The which-key entries shown on entering prefix mode, keyed by the key
+/// pressed after the prefix.
+pub(crate) fn prefix_menu_entries(keybinds: &Keybinds) -> Vec<KeybindHelpEntry> {
+    top_level_entries(keybinds)
+        .into_iter()
+        .chain(custom_command_entries(keybinds))
+        .filter_map(|(label, description)| {
+            let parts = label
+                .split(" / ")
+                .filter_map(|part| part.strip_prefix("prefix+"))
+                .collect::<Vec<_>>();
+            (!parts.is_empty()).then(|| (parts.join(" / "), description))
+        })
+        .collect()
+}
+
+/// Ids of every menu reachable from prefix mode: built-in menus, then
+/// user-defined `type = "group"` menus.
+fn menu_ids(keybinds: &Keybinds) -> Vec<(String, String, String)> {
+    keybinds
+        .groups
+        .iter()
+        .map(|group| {
+            (
+                group.id.clone(),
+                group.description.clone(),
+                binding_label(&group.opener),
+            )
+        })
+        .collect()
+}
+
 pub(crate) fn keybind_help_groups(
     keybinds: &Keybinds,
     prefix: (crossterm::event::KeyCode, crossterm::event::KeyModifiers),
 ) -> Vec<KeybindHelpGroup> {
+    let mut top = vec![entry(
+        crate::config::format_key_combo(prefix),
+        "prefix mode",
+    )];
+    top.extend(top_level_entries(keybinds));
     let mut groups = vec![
+        (Cow::Borrowed("global"), top),
         (
-            "global",
-            vec![
-                entry(crate::config::format_key_combo(prefix), "prefix mode"),
-                entry(binding_label(&keybinds.help), "keybinds"),
-                entry(binding_label(&keybinds.settings), "settings"),
-                entry(binding_label(&keybinds.detach), "detach"),
-                entry(binding_label(&keybinds.reload_config), "reload config"),
-                entry(
-                    binding_label(&keybinds.open_notification_target),
-                    "open notification target",
-                ),
-            ],
-        ),
-        (
-            "navigation",
+            Cow::Borrowed("navigation"),
             vec![
                 entry("esc", "back"),
                 entry(
@@ -107,112 +175,19 @@ pub(crate) fn keybind_help_groups(
                 entry("1..9", "switch workspace"),
             ],
         ),
-        (
-            "workspaces / tabs",
-            vec![
-                entry(
-                    binding_label(&keybinds.workspace_picker),
-                    "workspace navigation",
-                ),
-                entry(binding_label(&keybinds.goto), "session navigator"),
-                entry(binding_label(&keybinds.new_workspace), "new workspace"),
-                entry(binding_label(&keybinds.new_worktree), "new worktree"),
-                entry(binding_label(&keybinds.open_worktree), "open worktree"),
-                entry(
-                    binding_label(&keybinds.remove_worktree),
-                    "delete worktree checkout",
-                ),
-                entry(
-                    binding_label(&keybinds.rename_workspace),
-                    "rename workspace",
-                ),
-                entry(binding_label(&keybinds.close_workspace), "close workspace"),
-                entry(
-                    binding_label(&keybinds.previous_workspace),
-                    "previous workspace",
-                ),
-                entry(binding_label(&keybinds.next_workspace), "next workspace"),
-                entry(
-                    indexed_label(&keybinds.switch_workspace),
-                    "switch workspace 1-9",
-                ),
-                entry(binding_label(&keybinds.previous_agent), "previous agent"),
-                entry(binding_label(&keybinds.next_agent), "next agent"),
-                entry(indexed_label(&keybinds.focus_agent), "focus agent 1-9"),
-                entry(binding_label(&keybinds.new_tab), "new tab"),
-                entry(binding_label(&keybinds.rename_tab), "rename tab"),
-                entry(binding_label(&keybinds.previous_tab), "previous tab"),
-                entry(binding_label(&keybinds.next_tab), "next tab"),
-                entry(binding_label(&keybinds.move_tab_previous), "move tab left"),
-                entry(binding_label(&keybinds.move_tab_next), "move tab right"),
-                entry(indexed_label(&keybinds.switch_tab), "switch tab 1-9"),
-                entry(binding_label(&keybinds.close_tab), "close tab"),
-            ],
-        ),
-        (
-            "panes",
-            vec![
-                entry(binding_label(&keybinds.split_vertical), "split vertical"),
-                entry(
-                    binding_label(&keybinds.split_horizontal),
-                    "split horizontal",
-                ),
-                entry(binding_label(&keybinds.close_pane), "close pane"),
-                entry(binding_label(&keybinds.rename_pane), "rename pane"),
-                entry(binding_label(&keybinds.edit_scrollback), "edit scrollback"),
-                entry(binding_label(&keybinds.clear_pane), "clear pane"),
-                entry(binding_label(&keybinds.copy_mode), "copy mode"),
-                entry(binding_label(&keybinds.zoom), "zoom pane"),
-                entry(binding_label(&keybinds.resize_mode), "resize mode"),
-                entry(
-                    binding_label(&keybinds.resize_pane_left),
-                    "resize pane left",
-                ),
-                entry(
-                    binding_label(&keybinds.resize_pane_down),
-                    "resize pane down",
-                ),
-                entry(binding_label(&keybinds.resize_pane_up), "resize pane up"),
-                entry(
-                    binding_label(&keybinds.resize_pane_right),
-                    "resize pane right",
-                ),
-                entry(binding_label(&keybinds.toggle_sidebar), "toggle sidebar"),
-                entry(binding_label(&keybinds.focus_pane_left), "focus pane left"),
-                entry(binding_label(&keybinds.focus_pane_down), "focus pane down"),
-                entry(binding_label(&keybinds.focus_pane_up), "focus pane up"),
-                entry(
-                    binding_label(&keybinds.focus_pane_right),
-                    "focus pane right",
-                ),
-                entry(binding_label(&keybinds.cycle_pane_next), "cycle pane next"),
-                entry(
-                    binding_label(&keybinds.cycle_pane_previous),
-                    "cycle pane previous",
-                ),
-                entry(binding_label(&keybinds.last_pane), "last pane"),
-            ],
-        ),
     ];
-
-    if !keybinds.custom_commands.is_empty() {
-        groups.push((
-            "custom",
-            keybinds
-                .custom_commands
-                .iter()
-                .map(|binding| {
-                    (
-                        binding.label.clone(),
-                        binding
-                            .description
-                            .clone()
-                            .map(Cow::Owned)
-                            .unwrap_or(Cow::Borrowed("custom command")),
-                    )
-                })
-                .collect(),
-        ));
+    for (id, description, opener) in menu_ids(keybinds) {
+        let entries = crate::input::group_entries(keybinds, &id);
+        if !entries.is_empty() {
+            groups.push((
+                Cow::Owned(format!("{description} menu ({opener})")),
+                entries,
+            ));
+        }
+    }
+    let custom = custom_command_entries(keybinds);
+    if !custom.is_empty() {
+        groups.push((Cow::Borrowed("custom"), custom));
     }
     groups
 }
@@ -246,11 +221,11 @@ mod tests {
     fn groups() -> Vec<KeybindHelpGroup> {
         vec![
             (
-                "workspaces / tabs",
+                Cow::Borrowed("workspaces / tabs"),
                 vec![entry("w", "workspace navigation"), entry("c", "new tab")],
             ),
             (
-                "panes",
+                Cow::Borrowed("panes"),
                 vec![entry("v", "split vertical"), entry("x", "close pane")],
             ),
         ]

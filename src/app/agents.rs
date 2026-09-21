@@ -402,6 +402,95 @@ impl App {
         })
     }
 
+    /// Probes the runtime host's `PATH` on every call, so an agent installed
+    /// mid-session is listed the next time it is asked for.
+    pub(super) fn installed_agent_kinds(&self) -> Vec<crate::api::schema::AgentKindInfo> {
+        installed_agents(crate::platform::executable_on_path)
+            .into_iter()
+            .map(|agent| crate::api::schema::AgentKindInfo {
+                kind: crate::detect::agent_label(agent).to_owned(),
+                executable: crate::detect::interactive_agent_executable(agent).to_owned(),
+            })
+            .collect()
+    }
+
+    /// Opens `kind` in a new focused tab of the active workspace. The agent is
+    /// the root pane's process, so the tab closes through the normal
+    /// last-pane path when the agent exits.
+    pub(super) fn open_agent_tab(
+        &mut self,
+        kind: &str,
+    ) -> Result<(usize, usize), AgentOpenTabError> {
+        let agent = crate::detect::parse_agent_label(kind)
+            .ok_or_else(|| AgentOpenTabError::UnsupportedKind(kind.to_owned()))?;
+        let executable = crate::detect::interactive_agent_executable(agent);
+        if !crate::platform::executable_on_path(executable) {
+            return Err(AgentOpenTabError::NotInstalled(executable.to_owned()));
+        }
+        let ws_idx = self
+            .state
+            .active
+            .filter(|ws_idx| *ws_idx < self.state.workspaces.len())
+            .ok_or(AgentOpenTabError::NoActiveWorkspace)?;
+        let cwd = self
+            .focused_pane_cwd_in_workspace(ws_idx)
+            .unwrap_or_else(|| self.resolve_new_terminal_cwd(None));
+        let (rows, cols) = self.state.estimate_pane_size();
+        let scrollback_limit_bytes = self.state.pane_scrollback_limit_bytes;
+        let host_terminal_theme = self.state.host_terminal_theme;
+        let host_terminal_appearance = self.state.host_terminal_appearance;
+        let workspace = self
+            .state
+            .workspaces
+            .get_mut(ws_idx)
+            .ok_or(AgentOpenTabError::NoActiveWorkspace)?;
+        let (tab_idx, terminal, runtime) = workspace
+            .create_tab_argv_command(
+                rows.max(4),
+                cols.max(10),
+                cwd,
+                &[executable.to_owned()],
+                Vec::new(),
+                scrollback_limit_bytes,
+                host_terminal_theme,
+                host_terminal_appearance,
+            )
+            .map_err(|err| AgentOpenTabError::SpawnFailed(err.to_string()))?;
+        let tab = &mut workspace.tabs[tab_idx];
+        tab.set_custom_name(crate::detect::agent_label(agent).to_owned());
+        let pane_id = tab.root_pane;
+        self.terminal_runtimes.insert(terminal.id.clone(), runtime);
+        self.state.terminals.insert(terminal.id.clone(), terminal);
+        self.state.remove_alias_shadowed_by_new_pane(pane_id);
+        self.state.switch_workspace_tab(ws_idx, tab_idx);
+        self.state.mode = crate::app::Mode::Terminal;
+        Ok((ws_idx, tab_idx))
+    }
+
+    pub(super) fn agent_open_tab_error_body(
+        &self,
+        err: AgentOpenTabError,
+    ) -> crate::api::schema::ErrorBody {
+        match err {
+            AgentOpenTabError::UnsupportedKind(kind) => crate::api::schema::ErrorBody {
+                code: "unsupported_agent_kind".into(),
+                message: format!("unsupported interactive agent kind {kind}"),
+            },
+            AgentOpenTabError::NotInstalled(executable) => crate::api::schema::ErrorBody {
+                code: "agent_not_installed".into(),
+                message: format!("{executable} was not found on the runtime host's PATH"),
+            },
+            AgentOpenTabError::NoActiveWorkspace => crate::api::schema::ErrorBody {
+                code: "workspace_not_found".into(),
+                message: "no active workspace".into(),
+            },
+            AgentOpenTabError::SpawnFailed(message) => crate::api::schema::ErrorBody {
+                code: "agent_tab_open_failed".into(),
+                message,
+            },
+        }
+    }
+
     fn agent_name_conflicts(
         &self,
         name: &str,
@@ -414,6 +503,15 @@ impl App {
             })
             .collect()
     }
+}
+
+/// The supported agents whose interactive executable `is_installed` accepts,
+/// in `Agent::ALL` order.
+pub(crate) fn installed_agents(is_installed: impl Fn(&str) -> bool) -> Vec<crate::detect::Agent> {
+    crate::detect::Agent::ALL
+        .into_iter()
+        .filter(|agent| is_installed(crate::detect::interactive_agent_executable(*agent)))
+        .collect()
 }
 
 fn available_shell_name(runtime: &crate::terminal::TerminalRuntime) -> Option<String> {
@@ -461,6 +559,13 @@ pub(super) enum AgentStartError {
     },
 }
 
+pub(super) enum AgentOpenTabError {
+    UnsupportedKind(String),
+    NotInstalled(String),
+    NoActiveWorkspace,
+    SpawnFailed(String),
+}
+
 pub(super) enum AgentRenameError {
     Target(TerminalTargetError),
     InvalidName,
@@ -474,7 +579,17 @@ pub(super) enum AgentRenameError {
 
 #[cfg(test)]
 mod tests {
-    use super::valid_agent_name;
+    use super::{installed_agents, valid_agent_name};
+    use crate::detect::Agent;
+
+    #[test]
+    fn installed_agents_keep_canonical_order_and_skip_missing_executables() {
+        let installed =
+            installed_agents(|executable| matches!(executable, "codex" | "kiro-cli" | "claude"));
+        assert_eq!(installed, [Agent::Claude, Agent::Codex, Agent::Kiro]);
+        assert!(installed_agents(|_| false).is_empty());
+        assert_eq!(installed_agents(|_| true), Agent::ALL);
+    }
 
     #[test]
     fn agent_names_use_a_small_cli_safe_grammar() {

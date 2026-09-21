@@ -811,8 +811,8 @@ fn workspace_actions_preserve_selected_target_and_client_confirmation() {
     state.navigate_workspace_id = state.navigation_target(&ClientEndpointId::Local, "ws_2");
 
     let rename = state.handle_raw_events(vec![RawInputEvent::Key(crate::input::TerminalKey::new(
-        KeyCode::Char('w'),
-        KeyModifiers::SHIFT,
+        KeyCode::Char('r'),
+        KeyModifiers::empty(),
     ))]);
     assert!(rename.actions.is_empty());
     assert!(matches!(
@@ -946,7 +946,8 @@ fn navigate_mode_selects_workspace_locally_then_focuses_by_stable_id() {
     state.set_pane_surface(surface());
 
     assert!(state.handle_input_bytes(&[0x02]).actions.is_empty());
-    let enter_navigate = state.handle_input_bytes(b"w");
+    assert!(state.handle_input_bytes(b"w").actions.is_empty());
+    let enter_navigate = state.handle_input_bytes(b"s");
     assert!(enter_navigate.repaint);
     assert_eq!(state.mode, ClientShellMode::Navigate);
     assert_eq!(

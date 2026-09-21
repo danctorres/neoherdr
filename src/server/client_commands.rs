@@ -13,6 +13,8 @@ pub(crate) const MAX_ENDPOINT_REQUEST_ID_BYTES: usize = 128;
 const ENDPOINT_RESPONSE_CHUNK_BYTES: usize = 512 * 1024;
 
 const CLIENT_SHELL_METHODS: &[&str] = &[
+    "agent.kinds",
+    "agent.open_tab",
     "client_shell.surface.set",
     "command.invoke",
     "integration.install",
@@ -35,6 +37,7 @@ const CLIENT_SHELL_METHODS: &[&str] = &[
     "pane.split",
     "pane.swap",
     "pane.zoom",
+    "plugin.action.invoke",
     "product_announcement.dismiss",
     "release_notes.dismiss",
     "server.reload_config",
@@ -297,6 +300,18 @@ mod tests {
             actual.remove("pane.link.resolve").as_deref(),
             Some("f5e4a3e01453ae7b188f127ce951c12c20e0bebcc17cc364eeb6d1a01fd5bf81")
         );
+        assert_eq!(
+            actual.remove("agent.kinds").as_deref(),
+            Some("c68f7405369bca24f07460192b31cda351a7d129dc8dabb4d9535a4784813e11")
+        );
+        assert_eq!(
+            actual.remove("agent.open_tab").as_deref(),
+            Some("7e24dc602630d43b2727500368d2edf58f8529d477e920632ee5f52ee2829c5b")
+        );
+        assert_eq!(
+            actual.remove("plugin.action.invoke").as_deref(),
+            Some("c9d7a501da3edf6e53e723a825554ff318664b3a4d80a572f448d10629462ae0")
+        );
 
         assert_eq!(
             actual, expected,
@@ -354,6 +369,13 @@ mod tests {
         ));
         assert!(supports_client_shell_method(&Method::ServerReloadConfig(
             crate::api::schema::EmptyParams::default(),
+        )));
+        assert!(supports_client_shell_method(&Method::PluginActionInvoke(
+            crate::api::schema::PluginActionInvokeParams {
+                action_id: "example.action".into(),
+                plugin_id: None,
+                context: None,
+            },
         )));
         assert!(supports_client_shell_method(&Method::PaneLinkActivate(
             crate::api::schema::PaneLinkActivateParams {

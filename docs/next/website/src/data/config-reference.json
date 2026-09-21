@@ -482,63 +482,111 @@
           "description": "Prefix key to enter prefix mode (e.g. \"ctrl+b\", \"f12\", \"esc\")."
         },
         {
+          "key": "keys.show_which_key",
+          "type": "boolean",
+          "default": "true",
+          "description": "Show the which-key hint popup instantly on entering prefix mode. `true` shows it immediately, `false` never auto-shows it."
+        },
+        {
           "key": "keys.help",
           "type": "keybinding",
           "default": "\"prefix+?\"",
           "description": "Open keybinding help."
         },
         {
-          "key": "keys.settings",
+          "key": "keys.workspace_menu",
+          "type": "keybinding",
+          "default": "\"prefix+w\"",
+          "description": "Open the workspace menu (new, rename, close, switch, next/previous)."
+        },
+        {
+          "key": "keys.tab_menu",
+          "type": "keybinding",
+          "default": "\"prefix+t\"",
+          "description": "Open the tab menu (new, rename, close, next/previous, move)."
+        },
+        {
+          "key": "keys.pane_menu",
+          "type": "keybinding",
+          "default": "\"prefix+p\"",
+          "description": "Open the pane menu (rename, clear name, split, close, zoom, scrollback, copy, swap)."
+        },
+        {
+          "key": "keys.agent_menu",
+          "type": "keybinding",
+          "default": "\"prefix+a\"",
+          "description": "Open the agent menu (jump to notification target, next/previous agent)."
+        },
+        {
+          "key": "keys.git_menu",
+          "type": "keybinding",
+          "default": "\"prefix+g\"",
+          "description": "Open the git menu (new, open, and remove worktrees, plus bundled worktree plugins)."
+        },
+        {
+          "key": "keys.system_menu",
           "type": "keybinding",
           "default": "\"prefix+s\"",
-          "description": "Open settings."
+          "description": "Open the system menu (settings, reload config, sidebar, help, detach)."
+        },
+        {
+          "key": "keys.tui_menu",
+          "type": "keybinding",
+          "default": "\"prefix+o\"",
+          "description": "Open the menu of TUIs configured in tuis.toml. Only shown when at least one TUI is configured."
+        },
+        {
+          "key": "keys.settings",
+          "type": "keybinding",
+          "default": "unset",
+          "description": "Open settings. Unset by default; reachable as `s s` in the system menu."
         },
         {
           "key": "keys.new_workspace",
           "type": "keybinding",
-          "default": "\"prefix+shift+n\"",
-          "description": "Create a new workspace."
+          "default": "unset",
+          "description": "Create a new workspace. Unset by default; reachable as `w n` in the workspace menu."
         },
         {
           "key": "keys.new_worktree",
           "type": "keybinding",
-          "default": "\"prefix+shift+g\"",
-          "description": "Create a Git worktree from the selected workspace."
+          "default": "unset",
+          "description": "Create a Git worktree from the selected workspace. Unset by default; reachable as `g n` in the git menu."
         },
         {
           "key": "keys.open_worktree",
           "type": "keybinding",
           "default": "unset",
-          "description": "Open an existing Git worktree from the selected workspace. Unset by default."
+          "description": "Open an existing Git worktree from the selected workspace. Unset by default; reachable as `g o` in the git menu."
         },
         {
           "key": "keys.remove_worktree",
           "type": "keybinding",
           "default": "unset",
-          "description": "Delete the selected managed worktree checkout after confirmation. Unset by default."
+          "description": "Delete the selected managed worktree checkout after confirmation. Unset by default; reachable as `g x` in the git menu."
         },
         {
           "key": "keys.rename_workspace",
           "type": "keybinding",
-          "default": "\"prefix+shift+w\"",
-          "description": "Rename the selected workspace."
+          "default": "unset",
+          "description": "Rename the selected workspace. Unset by default; reachable as `w r` in the workspace menu."
         },
         {
           "key": "keys.close_workspace",
           "type": "keybinding",
-          "default": "\"prefix+shift+d\"",
-          "description": "Close the selected workspace."
+          "default": "unset",
+          "description": "Close the selected workspace. Unset by default; reachable as `w x` in the workspace menu."
         },
         {
           "key": "keys.workspace_picker",
           "type": "keybinding",
-          "default": "\"prefix+w\"",
-          "description": "Open the workspace navigation surface."
+          "default": "unset",
+          "description": "Open the workspace navigation surface. Unset by default; reachable as `w s` in the workspace menu."
         },
         {
           "key": "keys.goto",
           "type": "keybinding",
-          "default": "\"prefix+g\"",
+          "default": "\"prefix+/\"",
           "description": "Open the session navigator."
         },
         {
@@ -586,38 +634,38 @@
         {
           "key": "keys.reload_config",
           "type": "keybinding",
-          "default": "\"prefix+shift+r\"",
-          "description": "Reload config.toml in the running app/server."
+          "default": "unset",
+          "description": "Reload config.toml in the running app/server. Unset by default; reachable as `s r` in the system menu."
         },
         {
           "key": "keys.open_notification_target",
           "type": "keybinding",
-          "default": "\"prefix+o\"",
-          "description": "Focus the currently visible notification target."
+          "default": "unset",
+          "description": "Focus the currently visible notification target. Unset by default; reachable as `a a` in the agent menu."
         },
         {
           "key": "keys.previous_workspace",
           "type": "keybinding",
           "default": "unset",
-          "description": "Select the previous workspace. Unset by default."
+          "description": "Select the previous workspace. Unset by default; reachable as `w k` in the workspace menu."
         },
         {
           "key": "keys.next_workspace",
           "type": "keybinding",
           "default": "unset",
-          "description": "Select the next workspace. Unset by default."
+          "description": "Select the next workspace. Unset by default; reachable as `w j` in the workspace menu."
         },
         {
           "key": "keys.previous_agent",
           "type": "keybinding",
           "default": "unset",
-          "description": "Focus the previous agent shown in the agent panel. Unset by default."
+          "description": "Focus the previous agent shown in the agent panel. Unset by default; reachable as `a k` in the agent menu."
         },
         {
           "key": "keys.next_agent",
           "type": "keybinding",
           "default": "unset",
-          "description": "Focus the next agent shown in the agent panel. Unset by default."
+          "description": "Focus the next agent shown in the agent panel. Unset by default; reachable as `a j` in the agent menu."
         },
         {
           "key": "keys.focus_agent",
@@ -634,38 +682,38 @@
         {
           "key": "keys.new_tab",
           "type": "keybinding",
-          "default": "\"prefix+c\"",
-          "description": "Create a new tab in the active workspace."
+          "default": "unset",
+          "description": "Create a new tab in the active workspace. Unset by default; reachable as `t n` in the tab menu."
         },
         {
           "key": "keys.rename_tab",
           "type": "keybinding",
-          "default": "\"prefix+shift+t\"",
-          "description": "Rename the active tab."
+          "default": "unset",
+          "description": "Rename the active tab. Unset by default; reachable as `t r` in the tab menu."
         },
         {
           "key": "keys.previous_tab",
           "type": "keybinding",
-          "default": "\"prefix+p\"",
+          "default": "\"prefix+[\"",
           "description": "Select the previous tab."
         },
         {
           "key": "keys.next_tab",
           "type": "keybinding",
-          "default": "\"prefix+n\"",
+          "default": "\"prefix+]\"",
           "description": "Select the next tab."
         },
         {
           "key": "keys.move_tab_previous",
           "type": "keybinding",
-          "default": "unset",
-          "description": "Move the active tab one position toward the front. Unset by default."
+          "default": "\"prefix+{\"",
+          "description": "Move the active tab one position toward the front."
         },
         {
           "key": "keys.move_tab_next",
           "type": "keybinding",
-          "default": "unset",
-          "description": "Move the active tab one position toward the back. Unset by default."
+          "default": "\"prefix+}\"",
+          "description": "Move the active tab one position toward the back."
         },
         {
           "key": "keys.switch_tab",
@@ -682,20 +730,20 @@
         {
           "key": "keys.close_tab",
           "type": "keybinding",
-          "default": "\"prefix+shift+x\"",
-          "description": "Close the active tab."
+          "default": "unset",
+          "description": "Close the active tab. Unset by default; reachable as `t x` in the tab menu."
         },
         {
           "key": "keys.rename_pane",
           "type": "keybinding",
-          "default": "\"prefix+shift+p\"",
-          "description": "Rename the focused pane."
+          "default": "unset",
+          "description": "Rename the focused pane. Unset by default; reachable as `p r` in the pane menu."
         },
         {
           "key": "keys.edit_scrollback",
           "type": "keybinding",
-          "default": "\"prefix+e\"",
-          "description": "Open the focused pane scrollback in $EDITOR."
+          "default": "unset",
+          "description": "Open the focused pane scrollback in $EDITOR. Unset by default; reachable as `p e` in the pane menu."
         },
         {
           "key": "keys.clear_pane",
@@ -706,8 +754,8 @@
         {
           "key": "keys.copy_mode",
           "type": "keybinding",
-          "default": "\"prefix+[\"",
-          "description": "Enter keyboard copy mode for the focused pane."
+          "default": "\"prefix+y\"",
+          "description": "Enter keyboard copy mode for the focused pane. `y` mirrors vim yank."
         },
         {
           "key": "keys.focus_pane_left",
@@ -772,20 +820,20 @@
         {
           "key": "keys.last_pane",
           "type": "keybinding",
-          "default": "unset",
-          "description": "Focus the last focused pane across workspaces and tabs. Unset by default."
+          "default": "\"prefix+semicolon\"",
+          "description": "Focus the last focused pane across workspaces and tabs."
         },
         {
           "key": "keys.split_vertical",
           "type": "keybinding",
-          "default": "\"prefix+v\"",
-          "description": "Split pane vertically (side by side)."
+          "default": "\"prefix+backslash\"",
+          "description": "Split pane vertically (side by side). The key looks like the divider."
         },
         {
           "key": "keys.split_horizontal",
           "type": "keybinding",
           "default": "\"prefix+minus\"",
-          "description": "Split pane horizontally (stacked)."
+          "description": "Split pane horizontally (stacked). The key looks like the divider."
         },
         {
           "key": "keys.close_pane",
@@ -832,8 +880,26 @@
         {
           "key": "keys.toggle_sidebar",
           "type": "keybinding",
-          "default": "\"prefix+b\"",
-          "description": "Toggle sidebar collapse."
+          "default": "unset",
+          "description": "Toggle sidebar collapse. Unset by default; reachable as `s b` in the system menu."
+        },
+        {
+          "key": "keys.toggle_group",
+          "type": "keybinding",
+          "default": "unset",
+          "description": "Expand or collapse the selected workspace group. Unset by default; reachable as `w g` in the workspace menu."
+        },
+        {
+          "key": "keys.clear_pane_name",
+          "type": "keybinding",
+          "default": "unset",
+          "description": "Clear the focused pane's custom name. Unset by default; reachable as `p c` in the pane menu."
+        },
+        {
+          "key": "keys.swap_with_focused_pane",
+          "type": "keybinding",
+          "default": "unset",
+          "description": "Swap the selected pane with the focused pane. Unset by default; reachable as `p s` in the pane menu."
         },
         {
           "key": "keys.indexed.tabs",

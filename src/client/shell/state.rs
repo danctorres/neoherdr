@@ -1,5 +1,7 @@
 use super::*;
 
+use std::borrow::Cow;
+
 pub(super) const MIN_TAB_WIDTH: u16 = 8;
 pub(super) const NEW_TAB_WIDTH: u16 = 3;
 pub(super) const WORKSPACE_HEADER_ROWS: u16 = 2;
@@ -37,6 +39,7 @@ pub(crate) struct ClientShellConfig {
     pub(super) palette: Palette,
     pub(super) keybinds: LiveKeybindConfig,
     pub(super) local_keys: crate::config::KeysConfig,
+    pub(super) tuis: Vec<crate::config::TuiConfig>,
     pub(super) keybinding_source: ClientShellKeybindingSource,
     pub(super) prompt_new_tab_name: bool,
     pub(super) prompt_new_workspace_name: bool,
@@ -123,6 +126,7 @@ pub(super) struct ShellHitMap {
     pub(super) navigator_rows: Vec<(Rect, ClientNavigatorTarget)>,
     pub(super) navigator_scrollbar: Rect,
     pub(super) navigator_scroll_metrics: Option<crate::pane::ScrollMetrics>,
+    pub(super) marketplace_rows: Vec<(Rect, usize)>,
     pub(super) worktree_search: Rect,
     pub(super) worktree_rows: Vec<(Rect, usize)>,
     pub(super) help_popup: Rect,
@@ -276,6 +280,16 @@ pub(super) enum ClientShellMode {
     Copy,
 }
 
+/// Reusable key-hint display primitive: an arbitrary set of (key, description)
+/// bindings rendered as a transient, advisory popup. Parameterized over the
+/// binding set (not hardcoded to any single mode) so other modal states can
+/// reuse it later without a second implementation.
+#[derive(Clone, Debug, Default)]
+pub(super) struct KeyHintState {
+    pub(super) bindings: Vec<(String, Cow<'static, str>)>,
+    pub(super) visible: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ClientShellOverlayKind {
     Onboarding,
@@ -288,6 +302,7 @@ pub(super) enum ClientShellOverlayKind {
     WorktreeCreate,
     WorktreeOpen,
     WorktreeRemove,
+    AgentTab,
     ContextMenu,
     GlobalMenu,
     Settings,
@@ -499,6 +514,48 @@ impl ClientWorktreeOpenOverlay {
     }
 }
 
+/// An installed agent as reported by the runtime's `agent.kinds`.
+#[derive(Debug, Clone)]
+pub(super) struct ClientAgentTabEntry {
+    pub(super) kind: String,
+    pub(super) executable: String,
+}
+
+/// Picker opened by the agent menu's "new agent tab" entry. Typing always
+/// edits the filter: agent names are the only thing to type here.
+#[derive(Debug)]
+pub(super) struct ClientAgentTabOverlay {
+    pub(super) entries: Vec<ClientAgentTabEntry>,
+    pub(super) selected: usize,
+    pub(super) query: TextEditor,
+    pub(super) error: Option<String>,
+    pub(super) opening: bool,
+}
+
+impl ClientAgentTabOverlay {
+    pub(super) fn filtered_indices(&self) -> Vec<usize> {
+        let query = self.query.trim().to_lowercase();
+        self.entries
+            .iter()
+            .enumerate()
+            .filter_map(|(index, entry)| {
+                (query.is_empty()
+                    || entry.kind.to_lowercase().contains(&query)
+                    || entry.executable.to_lowercase().contains(&query))
+                .then_some(index)
+            })
+            .collect()
+    }
+
+    pub(super) fn selected_entry_index(&self) -> Option<usize> {
+        let filtered = self.filtered_indices();
+        filtered
+            .contains(&self.selected)
+            .then_some(self.selected)
+            .or_else(|| filtered.first().copied())
+    }
+}
+
 #[derive(Debug)]
 pub(super) struct ClientWorktreeRemoveOverlay {
     pub(super) workspace_id: String,
@@ -588,6 +645,7 @@ pub(super) enum ClientShellOverlay {
     WorktreeCreate(ClientWorktreeCreateOverlay),
     WorktreeOpen(ClientWorktreeOpenOverlay),
     WorktreeRemove(ClientWorktreeRemoveOverlay),
+    AgentTab(ClientAgentTabOverlay),
     ContextMenu(ClientContextMenuOverlay),
     GlobalMenu(ClientGlobalMenuOverlay),
     Settings(ClientSettingsOverlay),
@@ -606,6 +664,7 @@ impl ClientShellOverlay {
             Self::WorktreeCreate(_) => ClientShellOverlayKind::WorktreeCreate,
             Self::WorktreeOpen(_) => ClientShellOverlayKind::WorktreeOpen,
             Self::WorktreeRemove(_) => ClientShellOverlayKind::WorktreeRemove,
+            Self::AgentTab(_) => ClientShellOverlayKind::AgentTab,
             Self::ContextMenu(_) => ClientShellOverlayKind::ContextMenu,
             Self::GlobalMenu(_) => ClientShellOverlayKind::GlobalMenu,
             Self::Settings(_) => ClientShellOverlayKind::Settings,
@@ -639,6 +698,8 @@ pub(super) enum PendingEndpointKind {
     WorktreeRemove {
         forced: bool,
     },
+    PrepareAgentTab,
+    AgentOpenTab,
     SelectionCopy,
     PaneScroll {
         pane_id: String,
@@ -887,6 +948,8 @@ pub(crate) struct ClientShellState {
     pub(super) active_endpoint_id: ClientEndpointId,
     pub(super) collapsed_endpoints: HashSet<ClientEndpointId>,
     pub(super) mode: ClientShellMode,
+    pub(super) key_hint: Option<KeyHintState>,
+    pub(super) active_key_group: Option<String>,
     pub(super) navigate_workspace_id: Option<WorkspaceNavigationTarget>,
     pub(super) pending_workspace_highlight: Option<PendingWorkspaceHighlight>,
     pub(super) reveal_navigation_workspace: bool,
@@ -1052,6 +1115,8 @@ impl ClientShellState {
             active_endpoint_id: ClientEndpointId::Local,
             collapsed_endpoints: HashSet::new(),
             mode: ClientShellMode::Terminal,
+            key_hint: None,
+            active_key_group: None,
             navigate_workspace_id: None,
             pending_workspace_highlight: None,
             reveal_navigation_workspace: false,
@@ -1156,6 +1221,68 @@ impl ClientShellState {
         if !groups.remove(&key) {
             groups.insert(key);
         }
+    }
+
+    /// Populate the reusable key-hint primitive from the given binding set.
+    /// Mode-agnostic: any caller can supply its own bindings.
+    pub(super) fn show_key_hint(&mut self, bindings: Vec<(String, Cow<'static, str>)>) {
+        if bindings.is_empty() {
+            self.key_hint = None;
+            return;
+        }
+        self.key_hint = Some(KeyHintState {
+            bindings,
+            visible: true,
+        });
+    }
+
+    /// Populate the key-hint primitive with the bindings reachable from
+    /// Prefix mode, synchronously in the same state update that enters Prefix
+    /// mode. No timer, no deadline, no tick: when `show_which_key` is false
+    /// the hint is never populated.
+    pub(super) fn maybe_show_prefix_key_hint(&mut self) {
+        if !self.config.local_keys.show_which_key {
+            return;
+        }
+        self.show_key_hint(crate::input::prefix_menu_entries(
+            &self.config.keybinds.keybinds,
+        ));
+    }
+
+    pub(super) fn maybe_show_key_group_hint(&mut self, group: &str) {
+        if !self.config.local_keys.show_which_key {
+            return;
+        }
+        let entries = crate::input::group_entries_where(
+            &self.config.keybinds.keybinds,
+            group,
+            |action| !matches!(action, crate::config::KeyGroupAction::Builtin(action) if !self.builtin_action_available(*action)),
+        );
+        self.show_key_hint(entries);
+    }
+
+    /// Built-in menu members hide when the active runtime does not advertise
+    /// the methods they need, instead of failing when pressed.
+    pub(super) fn builtin_action_available(&self, action: crate::input::KeybindAction) -> bool {
+        match action {
+            crate::input::KeybindAction::NewAgentTab => {
+                self.active_endpoint_advertises("agent.kinds")
+                    && self.active_endpoint_advertises("agent.open_tab")
+            }
+            _ => true,
+        }
+    }
+
+    fn active_endpoint_advertises(&self, method: &str) -> bool {
+        self.endpoints
+            .iter()
+            .find(|endpoint| endpoint.endpoint_id == self.active_endpoint_id)
+            .and_then(|endpoint| endpoint.methods.as_ref())
+            .is_some_and(|methods| methods.contains(method))
+    }
+
+    pub(super) fn clear_key_hint(&mut self) {
+        self.key_hint = None;
     }
 
     pub(super) fn navigation_workspace_entries(

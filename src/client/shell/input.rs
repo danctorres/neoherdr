@@ -473,6 +473,10 @@ impl ClientShellState {
                         ..
                     }
                 ))
+                | Some(ClientShellOverlay::AgentTab(ClientAgentTabOverlay {
+                    opening: false,
+                    ..
+                }))
                 | Some(ClientShellOverlay::Navigator(ClientNavigatorOverlay {
                     search_focused: true,
                     ..
@@ -571,6 +575,7 @@ impl ClientShellState {
                 }
                 if crate::config::terminal_key_matches_combo(key, self.config.keybinds.prefix) {
                     self.mode = ClientShellMode::Prefix;
+                    self.maybe_show_prefix_key_hint();
                     outcome.repaint = true;
                     return None;
                 }
@@ -584,25 +589,64 @@ impl ClientShellState {
                 } else {
                     ClientShellMode::Terminal
                 };
-                if crate::config::terminal_key_matches_combo(key, self.config.keybinds.prefix) {
+                if let Some(group) = self.active_key_group.clone() {
+                    if key.code == KeyCode::Esc {
+                        self.active_key_group = None;
+                        self.maybe_show_prefix_key_hint();
+                        outcome.repaint = true;
+                        return None;
+                    }
+                    if let Some(binding) =
+                        crate::input::resolve_group_key(&self.config.keybinds.keybinds, &group, key)
+                            .filter(|binding| {
+                                !matches!(binding, crate::input::KeybindMatch::Action(action) if !self.builtin_action_available(*action))
+                            })
+                    {
+                        self.active_key_group = None;
+                        self.mode = return_mode;
+                        self.clear_key_hint();
+                        outcome.repaint = true;
+                        self.record_binding(binding, outcome);
+                        return None;
+                    }
+                    self.active_key_group = None;
                     self.mode = return_mode;
+                    self.clear_key_hint();
+                    outcome.repaint = true;
+                    return None;
+                }
+                if crate::config::terminal_key_matches_combo(key, self.config.keybinds.prefix) {
+                    self.active_key_group = None;
+                    self.mode = return_mode;
+                    self.clear_key_hint();
                     outcome.repaint = true;
                     return self.focused_pane_id().map(ClientInputTarget::Pane);
                 }
                 if key.code == KeyCode::Esc {
+                    self.active_key_group = None;
                     self.mode = return_mode;
+                    self.clear_key_hint();
                     outcome.repaint = true;
                     return None;
                 }
                 if let Some(binding) =
                     crate::input::resolve_prefix_binding(&self.config.keybinds.keybinds, key)
                 {
+                    if let crate::input::KeybindMatch::Group(group) = binding {
+                        self.maybe_show_key_group_hint(&group);
+                        self.active_key_group = Some(group);
+                        outcome.repaint = true;
+                        return None;
+                    }
+                    self.active_key_group = None;
                     self.mode = return_mode;
+                    self.clear_key_hint();
                     outcome.repaint = true;
                     self.record_binding(binding, outcome);
                     return None;
                 }
                 self.mode = return_mode;
+                self.clear_key_hint();
                 outcome.repaint = true;
                 None
             }
@@ -622,6 +666,7 @@ impl ClientShellState {
                     && crate::config::terminal_key_matches_combo(key, self.config.keybinds.prefix)
                 {
                     self.mode = ClientShellMode::Prefix;
+                    self.maybe_show_prefix_key_hint();
                     outcome.repaint = true;
                 } else {
                     self.route_copy_mode_key(key, outcome);
@@ -785,21 +830,32 @@ impl ClientShellState {
             return;
         }
 
-        let binding = crate::input::resolve_non_indexed_action(
+        // Navigate mode selects a workspace, so the workspace menu's keys
+        // (`n` new, `r` rename, `x` close, ...) act on it without the menu.
+        let binding = crate::input::resolve_group_key(
             &self.config.keybinds.keybinds,
+            crate::config::WORKSPACE_GROUP,
             key,
-            KeybindDispatch::Prefix,
         )
-        .filter(|action| {
+        .or_else(|| {
+            crate::input::resolve_non_indexed_action(
+                &self.config.keybinds.keybinds,
+                key,
+                KeybindDispatch::Prefix,
+            )
+            .map(KeybindMatch::Action)
+        })
+        .filter(|binding| {
             !matches!(
-                action,
-                KeybindAction::FocusPaneLeft
-                    | KeybindAction::FocusPaneDown
-                    | KeybindAction::FocusPaneUp
-                    | KeybindAction::FocusPaneRight
+                binding,
+                KeybindMatch::Action(
+                    KeybindAction::FocusPaneLeft
+                        | KeybindAction::FocusPaneDown
+                        | KeybindAction::FocusPaneUp
+                        | KeybindAction::FocusPaneRight
+                )
             )
         })
-        .map(KeybindMatch::Action)
         .or_else(|| {
             crate::input::resolve_custom_command(
                 &self.config.keybinds.keybinds,

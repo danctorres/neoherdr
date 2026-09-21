@@ -46,9 +46,57 @@ Reload a running server after editing `config.toml`:
 herdr server reload-config
 ```
 
-You can also open the global menu in Herdr and choose `reload config`.
+You can also press `prefix+s r` (system menu, reload config), or open the global menu in Herdr and choose `reload config`.
 
 Reload applies most UI settings without restarting panes. Startup-only settings still need a restart.
+
+## System TUIs
+
+Declare system-installed terminal applications in `tuis.toml`, which lives next
+to `config.toml` and follows the same path resolution (including
+`HERDR_CONFIG_PATH`). Herdr does not install or bundle these programs:
+
+```text
+Linux and macOS: ~/.config/herdr/tuis.toml
+Windows:          %APPDATA%\herdr\tuis.toml
+```
+
+Each entry supplies a menu-local key, display metadata, and argv command. The
+configured TUIs form the `open` menu, which opens with `prefix+o` by default
+and is shown only when at least one TUI is configured; change `keys.tui_menu`
+in `config.toml` to choose another opener:
+
+```toml
+[[tui]]
+id = "lazygit"
+key = "g"
+title = "lazygit"
+description = "Open lazygit for the focused pane"
+command = ["lazygit"]
+width = "90%"
+height = "90%"
+
+[[tui]]
+id = "btop"
+key = "b"
+title = "btop"
+command = ["btop"]
+```
+
+Save this as `tuis.toml` beside your `config.toml`. The executable names are
+resolved from the system `PATH`, so install each TUI separately before using
+its binding.
+
+The menu and each member appear in which-key and help. Members use only their
+local key inside the menu, never a top-level prefix binding. Each
+action opens as a popup and uses the
+focused pane's working directory when available. Arguments are passed directly
+to the system executable, not through a shell. If a command is absent from
+`PATH`, its popup shows a short message and waits for Enter. Invalid entries
+are reported independently so valid entries remain usable.
+
+Reload the running server after editing this file with
+`herdr server reload-config`.
 
 Themes, sidebar layouts, copy behavior, and other presentation settings come from the client's local config, including when viewing an SSH machine. Pane defaults, worktrees, integrations, and custom commands belong to the server where the panes run. The UI's `reload config` action reloads both the client's local settings and the selected server's config. Local keybindings reload too; `--remote-keybindings server` instead uses the selected server's keybindings.
 
@@ -132,23 +180,41 @@ A small keybinding override looks like this:
 ```toml
 [keys]
 prefix = "ctrl+b"
-goto = "prefix+g"
+goto = "prefix+/"
 new_tab = "prefix+c"
-next_tab = "prefix+n"
-previous_tab = "prefix+p"
+next_tab = "prefix+]"
+previous_tab = "prefix+["
 focus_pane_left = "prefix+h"
 navigate_workspace_down = "j"
 navigate_pane_down = "ctrl+j"
 split_horizontal = "prefix+minus"
 ```
 
-The default keymap is prefix-first so Herdr does not steal input from shells, editors, tmux, or terminal apps. Search `keys.` in the [Config reference](/docs/config-reference/) to see every action and default binding. The in-app help panel at `prefix+?` shows the active bindings.
+The default keymap is prefix-first so Herdr does not steal input from shells, editors, tmux, or terminal apps. Only the hot path (pane focus, tabs, splits, zoom) sits one key after the prefix; everything else lives in menus such as `prefix+w` (workspace) and `prefix+t` (tab). See [Keyboard](/docs/keyboard/) for the full default layout. Search `keys.` in the [Config reference](/docs/config-reference/) to see every action and default binding. The in-app help panel at `prefix+?` shows the active bindings.
+
+Actions that are reachable through a menu are unset at the top level by default. Binding one directly, such as `new_tab = "prefix+c"` above, works exactly as written and keeps the menu entry.
+
+### Menus
+
+Each menu opener is a normal keybinding field, so you can move or unbind it:
+
+| Field | Default | Menu id |
+| --- | --- | --- |
+| `workspace_menu` | `prefix+w` | `workspace` |
+| `tab_menu` | `prefix+t` | `tab` |
+| `pane_menu` | `prefix+p` | `pane` |
+| `agent_menu` | `prefix+a` | `agent` |
+| `git_menu` | `prefix+g` | `git` |
+| `system_menu` | `prefix+s` | `system` |
+| `tui_menu` | `prefix+o` | `open` |
+
+Keys inside a menu are fixed and pressed without the prefix once the menu is open; see [Keyboard](/docs/keyboard/#menus) for every entry. If one of your own bindings takes a default opener key, for example a custom command on `prefix+s`, your binding wins and a config diagnostic suggests setting `keys.system_menu` to another key.
 
 A binding may also be an array when one action needs multiple shortcuts:
 
 ```toml
 [keys]
-next_tab = ["prefix+n", "ctrl+alt+]"]
+next_tab = ["prefix+]", "ctrl+alt+]"]
 ```
 
 Optional actions are unset by default. Bind them with `prefix+` for prefix-mode behavior, or use an explicit modified chord when you intentionally want a direct shortcut. For example, tmux-style one-keystroke pane resizing without entering resize mode:
@@ -205,7 +271,7 @@ adding a split or tab:
 
 ```toml
 [[keys.command]]
-key = "prefix+t"
+key = "prefix+alt+t"
 type = "popup"
 command = "exec \"${SHELL:-sh}\""
 description = "open scratch terminal"
@@ -225,13 +291,52 @@ qualified id when action ids are not globally unique:
 
 ```toml
 [[keys.command]]
-key = "prefix+l"
+key = "prefix+alt+l"
 type = "plugin_action"
 command = "example.layout.apply"
 description = "apply layout"
 ```
 
 `description` is optional. When set, it appears in the keybind help panel (opened with `prefix+?`) instead of the default `'custom command'` label.
+
+### Adding commands to menus
+
+A `[[keys.command]]` entry with `group = "<id>"` joins a menu instead of taking a top-level key. The id is one of the built-in menus (`workspace`, `tab`, `pane`, `agent`, `git`, `system`, `open`) or a menu you open yourself with `type = "group"`. A member's `key` is a bare key such as `"d"`, not a `prefix+` binding. A member on the same key as a built-in entry replaces that entry in the menu. For example, to add worktrunk's remove action to the git menu:
+
+```toml
+[[keys.command]]
+key = "d"
+group = "git"
+type = "plugin_action"
+command = "worktrunk.remove"
+description = "worktrunk: remove"
+```
+
+`type = "group"` defines your own menu. Give it a `group` id and a top-level `prefix+...` key; then add member entries that share the same `group` id with bare keys:
+
+```toml
+[[keys.command]]
+key = "prefix+m"
+type = "group"
+group = "scripts"
+description = "scripts"
+
+[[keys.command]]
+key = "b"
+group = "scripts"
+type = "shell"
+command = "make build"
+description = "build"
+
+[[keys.command]]
+key = "t"
+group = "scripts"
+type = "pane"
+command = "make test"
+description = "test"
+```
+
+Pressing `prefix+m` opens the menu; pressing `b` or `t` runs the matching member. Which-key lists each menu at the top level as `+` and its description, such as `+workspace`, `+tab`, or `+scripts`. `esc` backs out to the top-level prefix menu. Menus are one level deep: a member entry cannot itself be a group opener. A member key that duplicates another user key in the same menu, or a `group` id with no matching menu, is rejected with a config diagnostic and the offending binding is disabled.
 
 Custom commands receive `HERDR_SOCKET_PATH`, `HERDR_BIN_PATH`, `HERDR_ACTIVE_WORKSPACE_ID`, `HERDR_ACTIVE_TAB_ID`, `HERDR_ACTIVE_PANE_ID`, and `HERDR_ACTIVE_PANE_CWD` when those values are available. Shell commands run from the focused pane's working directory when Herdr can detect it.
 

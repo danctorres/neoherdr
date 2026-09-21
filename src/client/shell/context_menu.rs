@@ -80,6 +80,74 @@ impl ClientContextMenuOverlay {
 }
 
 impl ClientShellState {
+    /// Shared ToggleGroup effect (context menu + keybind): flip the
+    /// collapse/expand state of the worktree group containing `workspace_id`.
+    /// Returns false when the workspace has no group to toggle.
+    pub(super) fn toggle_workspace_group(
+        &mut self,
+        workspace_id: &str,
+        outcome: &mut ClientShellInput,
+    ) -> bool {
+        let key = self.snapshot.as_deref().and_then(|snapshot| {
+            snapshot
+                .workspaces
+                .iter()
+                .find(|workspace| workspace.workspace_id == workspace_id)
+                .and_then(|workspace| workspace.worktree.as_ref())
+                .map(|worktree| worktree.key.clone())
+        });
+        if let Some(key) = key {
+            let endpoint_id = self.active_endpoint_id.clone();
+            self.toggle_collapsed_group(&endpoint_id, key);
+            self.persist_chrome_preferences(outcome);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Shared ClearPaneName effect (context menu + keybind): clear `pane_id`'s
+    /// custom name.
+    pub(super) fn clear_pane_name(&mut self, pane_id: String, outcome: &mut ClientShellInput) {
+        self.push_endpoint_method(
+            crate::api::schema::Method::PaneRename(crate::api::schema::PaneRenameParams {
+                pane_id,
+                label: None,
+            }),
+            outcome,
+        );
+    }
+
+    /// Shared SwapWithFocusedPane effect (context menu + keybind): swap
+    /// `target_pane_id` with `source_pane_id`, with focus following the
+    /// source pane. No-op when there is no source pane.
+    pub(super) fn swap_with_focused_pane(
+        &mut self,
+        source_pane_id: Option<String>,
+        target_pane_id: String,
+        outcome: &mut ClientShellInput,
+    ) {
+        use crate::api::schema::{Method, PaneSwapParams, PaneTarget};
+
+        if let Some(source_pane_id) = source_pane_id {
+            self.push_endpoint_method(
+                Method::PaneSwap(PaneSwapParams {
+                    pane_id: None,
+                    direction: None,
+                    source_pane_id: Some(source_pane_id.clone()),
+                    target_pane_id: Some(target_pane_id),
+                }),
+                outcome,
+            );
+            self.push_endpoint_method(
+                Method::PaneFocus(PaneTarget {
+                    pane_id: source_pane_id,
+                }),
+                outcome,
+            );
+        }
+    }
+
     pub(super) fn open_workspace_context_menu(&mut self, workspace_id: String, x: u16, y: u16) {
         let Some(snapshot) = self.snapshot.as_deref() else {
             return;
@@ -270,19 +338,7 @@ impl ClientShellState {
                 self.begin_worktree_action_for(KeybindAction::RemoveWorktree, workspace_id, outcome)
             }
             ClientContextMenuAction::ToggleGroup => {
-                let key = self.snapshot.as_deref().and_then(|snapshot| {
-                    snapshot
-                        .workspaces
-                        .iter()
-                        .find(|workspace| workspace.workspace_id == workspace_id)
-                        .and_then(|workspace| workspace.worktree.as_ref())
-                        .map(|worktree| worktree.key.clone())
-                });
-                if let Some(key) = key {
-                    let endpoint_id = self.active_endpoint_id.clone();
-                    self.toggle_collapsed_group(&endpoint_id, key);
-                    self.persist_chrome_preferences(outcome);
-                }
+                self.toggle_workspace_group(&workspace_id, outcome);
             }
             _ => {}
         }
@@ -374,8 +430,8 @@ impl ClientShellState {
         outcome: &mut ClientShellInput,
     ) {
         use crate::api::schema::{
-            Method, PaneInputSetParams, PaneRenameParams, PaneRightClickTarget, PaneSplitParams,
-            PaneSwapParams, PaneTarget, PaneZoomMode, PaneZoomParams, SplitDirection,
+            Method, PaneInputSetParams, PaneRightClickTarget, PaneSplitParams, PaneTarget,
+            PaneZoomMode, PaneZoomParams, SplitDirection,
         };
 
         match action {
@@ -393,31 +449,9 @@ impl ClientShellState {
                     target: ClientRenameTarget::Pane { pane_id },
                 }));
             }
-            ClientContextMenuAction::ClearPaneName => self.push_endpoint_method(
-                Method::PaneRename(PaneRenameParams {
-                    pane_id,
-                    label: None,
-                }),
-                outcome,
-            ),
+            ClientContextMenuAction::ClearPaneName => self.clear_pane_name(pane_id, outcome),
             ClientContextMenuAction::SwapWithFocusedPane => {
-                if let Some(source_pane_id) = source_pane_id {
-                    self.push_endpoint_method(
-                        Method::PaneSwap(PaneSwapParams {
-                            pane_id: None,
-                            direction: None,
-                            source_pane_id: Some(source_pane_id.clone()),
-                            target_pane_id: Some(pane_id),
-                        }),
-                        outcome,
-                    );
-                    self.push_endpoint_method(
-                        Method::PaneFocus(PaneTarget {
-                            pane_id: source_pane_id,
-                        }),
-                        outcome,
-                    );
-                }
+                self.swap_with_focused_pane(source_pane_id, pane_id, outcome)
             }
             ClientContextMenuAction::SplitRight | ClientContextMenuAction::SplitDown => {
                 self.push_endpoint_method(

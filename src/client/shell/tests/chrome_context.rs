@@ -523,3 +523,165 @@ fn close_confirmation_error_becomes_client_owned_overlay_and_stable_group_close(
             if params.workspace_id == "ws_1" && params.close_group
     ));
 }
+
+fn worktree_group_snapshot() -> ClientShellSnapshot {
+    let mut snapshot = snapshot();
+    snapshot.workspaces[0].worktree = Some(ClientShellWorktree {
+        key: "repo".into(),
+        label: "repo".into(),
+        is_linked_worktree: false,
+    });
+    let mut child = snapshot.workspaces[0].clone();
+    child.workspace_id = "ws_2".into();
+    child.active_tab_id = "tab_ws_2".into();
+    child.number = 2;
+    child.label = "feature".into();
+    child.focused = false;
+    child.agent_status = AgentStatus::Blocked;
+    child.worktree = Some(ClientShellWorktree {
+        key: "repo".into(),
+        label: "repo".into(),
+        is_linked_worktree: true,
+    });
+    snapshot.workspaces.push(child);
+    snapshot
+}
+
+fn context_menu_index(state: &ClientShellState, action: ClientContextMenuAction) -> usize {
+    match state.overlay.as_ref() {
+        Some(ClientShellOverlay::ContextMenu(menu)) => menu
+            .items()
+            .iter()
+            .position(|item| item.action == action)
+            .unwrap_or_else(|| panic!("context menu item {action:?}")),
+        _ => panic!("context menu overlay"),
+    }
+}
+
+#[test]
+fn toggle_group_keybind_matches_context_menu_effect() {
+    let mut menu_state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    menu_state.set_snapshot(Box::new(worktree_group_snapshot()));
+    menu_state.open_workspace_context_menu("ws_1".into(), 0, 0);
+    let index = context_menu_index(&menu_state, ClientContextMenuAction::ToggleGroup);
+    menu_state.activate_context_menu_item(index, &mut ClientShellInput::default());
+    assert!(menu_state.group_is_collapsed(&ClientEndpointId::Local, "repo"));
+
+    let mut key_state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    key_state.set_snapshot(Box::new(worktree_group_snapshot()));
+    key_state.record_binding(
+        crate::input::KeybindMatch::Action(crate::input::KeybindAction::ToggleGroup),
+        &mut ClientShellInput::default(),
+    );
+    assert!(key_state.group_is_collapsed(&ClientEndpointId::Local, "repo"));
+}
+
+#[test]
+fn clear_pane_name_keybind_matches_context_menu_effect() {
+    let mut labeled = snapshot();
+    labeled.panes[0].label = Some("custom".into());
+
+    let mut menu_state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    menu_state.set_snapshot(Box::new(labeled.clone()));
+    menu_state.open_pane_context_menu("pane_1".into(), 0, 0);
+    let index = context_menu_index(&menu_state, ClientContextMenuAction::ClearPaneName);
+    let mut menu_outcome = ClientShellInput::default();
+    menu_state.activate_context_menu_item(index, &mut menu_outcome);
+
+    let mut key_state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    key_state.set_snapshot(Box::new(labeled));
+    let mut key_outcome = ClientShellInput::default();
+    key_state.record_binding(
+        crate::input::KeybindMatch::Action(crate::input::KeybindAction::ClearPaneName),
+        &mut key_outcome,
+    );
+
+    for outcome in [&menu_outcome, &key_outcome] {
+        assert!(
+            outcome.actions.iter().any(|action| matches!(
+                action,
+                ClientShellAction::Endpoint { request, .. }
+                if matches!(
+                    &request.method,
+                    crate::api::schema::Method::PaneRename(params)
+                    if params.pane_id == "pane_1" && params.label.is_none()
+                )
+            )),
+            "pane rename effect missing"
+        );
+    }
+    assert_eq!(menu_outcome.actions.len(), key_outcome.actions.len());
+}
+
+#[test]
+fn swap_with_focused_pane_keybind_matches_context_menu_effect() {
+    let mut two_panes = snapshot();
+    two_panes.panes.push(ClientShellPane {
+        pane_id: "pane_2".into(),
+        workspace_id: "ws_1".into(),
+        tab_id: "tab_1".into(),
+        label: None,
+        cwd: Some("/repo".into()),
+        foreground_cwd: Some("/repo".into()),
+        focused: false,
+        right_click_passthrough: false,
+    });
+
+    let mut menu_state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    menu_state.set_snapshot(Box::new(two_panes.clone()));
+    menu_state.open_pane_context_menu("pane_2".into(), 0, 0);
+    let index = context_menu_index(&menu_state, ClientContextMenuAction::SwapWithFocusedPane);
+    let mut menu_outcome = ClientShellInput::default();
+    menu_state.activate_context_menu_item(index, &mut menu_outcome);
+
+    // The keybind targets the previously focused (now non-focused) pane
+    // selected via Navigate mode; the focused pane stays the swap source so
+    // focus follows the same pane in both paths.
+    let mut key_state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    key_state.set_snapshot(Box::new(two_panes));
+    key_state.previous_pane_id = Some("pane_2".into());
+    let mut key_outcome = ClientShellInput::default();
+    key_state.record_binding(
+        crate::input::KeybindMatch::Action(crate::input::KeybindAction::SwapWithFocusedPane),
+        &mut key_outcome,
+    );
+
+    for outcome in [&menu_outcome, &key_outcome] {
+        assert!(
+            outcome.actions.iter().any(|action| matches!(
+                action,
+                ClientShellAction::Endpoint { request, .. }
+                if matches!(
+                    &request.method,
+                    crate::api::schema::Method::PaneSwap(params)
+                    if params.source_pane_id.as_deref() == Some("pane_1")
+                        && params.target_pane_id.as_deref() == Some("pane_2")
+                )
+            )),
+            "pane swap effect missing"
+        );
+        assert!(
+            outcome.actions.iter().any(|action| matches!(
+                action,
+                ClientShellAction::Endpoint { request, .. }
+                if matches!(
+                    &request.method,
+                    crate::api::schema::Method::PaneFocus(target)
+                    if target.pane_id == "pane_1"
+                )
+            )),
+            "pane focus effect missing"
+        );
+    }
+    assert_eq!(menu_outcome.actions.len(), key_outcome.actions.len());
+
+    // No selection, no-op.
+    let mut idle = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    idle.set_snapshot(Box::new(snapshot()));
+    let mut idle_outcome = ClientShellInput::default();
+    idle.record_binding(
+        crate::input::KeybindMatch::Action(crate::input::KeybindAction::SwapWithFocusedPane),
+        &mut idle_outcome,
+    );
+    assert!(idle_outcome.actions.is_empty());
+}

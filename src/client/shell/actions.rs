@@ -7,6 +7,19 @@ impl ClientShellState {
         outcome: &mut ClientShellInput,
     ) {
         match binding {
+            crate::input::KeybindMatch::Group(_) => {}
+            crate::input::KeybindMatch::PluginAction(action_id) => {
+                self.push_endpoint_method(
+                    crate::api::schema::Method::PluginActionInvoke(
+                        crate::api::schema::PluginActionInvokeParams {
+                            action_id: action_id.to_owned(),
+                            plugin_id: None,
+                            context: None,
+                        },
+                    ),
+                    outcome,
+                );
+            }
             crate::input::KeybindMatch::Action(crate::input::KeybindAction::Detach) => {
                 outcome.detach = true;
             }
@@ -41,6 +54,10 @@ impl ClientShellState {
                         | crate::input::KeybindAction::RemoveWorktree
                 ) {
                     self.begin_worktree_action(action, outcome);
+                    return;
+                }
+                if action == crate::input::KeybindAction::NewAgentTab {
+                    self.begin_agent_tab(outcome);
                     return;
                 }
                 if action == crate::input::KeybindAction::OpenNavigator {
@@ -169,6 +186,37 @@ impl ClientShellState {
                     if self.enter_copy_mode(outcome) {
                         outcome.repaint = true;
                     }
+                    return;
+                }
+                if action == crate::input::KeybindAction::ToggleGroup {
+                    if let Some(workspace_id) = self.workspace_action_id() {
+                        self.toggle_workspace_group(&workspace_id, outcome);
+                    }
+                    outcome.repaint = true;
+                    return;
+                }
+                if action == crate::input::KeybindAction::ClearPaneName {
+                    if let Some(pane_id) = self.focused_pane_id() {
+                        self.clear_pane_name(pane_id, outcome);
+                    }
+                    outcome.repaint = true;
+                    return;
+                }
+                if action == crate::input::KeybindAction::SwapWithFocusedPane {
+                    // Keyboard analogue of the context-menu item: the menu
+                    // target is the previously focused (now non-focused) pane
+                    // selected via Navigate mode; the source stays the focused
+                    // pane, so focus follows the same pane in both paths.
+                    // No-op when there is no such pane.
+                    let source = self.focused_pane_id();
+                    let target = self
+                        .previous_pane_id
+                        .clone()
+                        .filter(|previous| Some(previous) != source.as_ref());
+                    if let (Some(source), Some(target)) = (source, target) {
+                        self.swap_with_focused_pane(Some(source), target, outcome);
+                    }
+                    outcome.repaint = true;
                     return;
                 }
                 if self.handle_endpoint_navigation(action, outcome) {
@@ -823,6 +871,12 @@ impl ClientShellState {
             kind @ (PendingEndpointKind::IntegrationList
             | PendingEndpointKind::IntegrationInstall) => {
                 return self.handle_settings_endpoint_result(kind, result);
+            }
+            kind @ (PendingEndpointKind::PrepareAgentTab | PendingEndpointKind::AgentOpenTab) => {
+                return (
+                    self.handle_agent_tab_endpoint_result(kind, result),
+                    Vec::new(),
+                );
             }
             kind => {
                 let mut outcome = ClientShellInput::default();
