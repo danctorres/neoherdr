@@ -402,10 +402,11 @@ impl App {
         })
     }
 
-    /// Probes the runtime host's `PATH` on every call, so an agent installed
+    /// Resolves agents the way their launch through the user's shell finds
+    /// them. Directories are searched on every call, so an agent installed
     /// mid-session is listed the next time it is asked for.
-    pub(super) fn installed_agent_kinds(&self) -> Vec<crate::api::schema::AgentKindInfo> {
-        installed_agents(crate::platform::executable_on_path)
+    pub(super) fn installed_agent_kinds(&mut self) -> Vec<crate::api::schema::AgentKindInfo> {
+        installed_agents(|executable| self.user_shell_executable_resolves(executable))
             .into_iter()
             .map(|agent| crate::api::schema::AgentKindInfo {
                 kind: crate::detect::agent_label(agent).to_owned(),
@@ -425,9 +426,13 @@ impl App {
         let agent = crate::detect::parse_agent_label(kind)
             .ok_or_else(|| AgentOpenTabError::UnsupportedKind(kind.to_owned()))?;
         let executable = crate::detect::interactive_agent_executable(agent);
-        if !crate::platform::executable_on_path(executable) {
+        if !self.user_shell_executable_resolves(executable) {
             return Err(AgentOpenTabError::NotInstalled(executable.to_owned()));
         }
+        let argv = crate::pane::user_shell_launch_argv(
+            crate::pane::PaneShellConfig::new(&self.state.default_shell, self.state.shell_mode),
+            &[executable.to_owned()],
+        );
         let ws_idx = self
             .state
             .active
@@ -450,7 +455,7 @@ impl App {
                 rows.max(4),
                 cols.max(10),
                 cwd,
-                &[executable.to_owned()],
+                &argv,
                 Vec::new(),
                 scrollback_limit_bytes,
                 host_terminal_theme,
@@ -509,7 +514,9 @@ impl App {
 
 /// The supported agents whose interactive executable `is_installed` accepts,
 /// in `Agent::ALL` order.
-pub(crate) fn installed_agents(is_installed: impl Fn(&str) -> bool) -> Vec<crate::detect::Agent> {
+pub(crate) fn installed_agents(
+    mut is_installed: impl FnMut(&str) -> bool,
+) -> Vec<crate::detect::Agent> {
     crate::detect::Agent::ALL
         .into_iter()
         .filter(|agent| is_installed(crate::detect::interactive_agent_executable(*agent)))

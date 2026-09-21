@@ -1683,6 +1683,33 @@ fn pane_shell(configured_shell: &str) -> String {
     pane_shell_from(configured_shell, std::env::var("SHELL").ok())
 }
 
+/// The shell a new tab would start (configured `default_shell`, else `$SHELL`)
+/// and whether it starts as a login shell. `None` when neither is set, so
+/// callers launch commands directly instead of through the fallback shell.
+pub(crate) fn user_shell(shell_config: PaneShellConfig<'_>) -> Option<(String, bool)> {
+    let configured = shell_config.default_shell.trim();
+    let shell = if configured.is_empty() {
+        std::env::var("SHELL").ok()?.trim().to_owned()
+    } else {
+        configured.to_owned()
+    };
+    let login = shell_mode_uses_login_shell(shell_config.mode, ShellLaunchTarget::current());
+    (!shell.is_empty()).then_some((shell, login))
+}
+
+/// `argv` wrapped to run through the user's shell, as a new tab would get it.
+pub(crate) fn user_shell_launch_argv(
+    shell_config: PaneShellConfig<'_>,
+    argv: &[String],
+) -> Vec<String> {
+    let shell = user_shell(shell_config);
+    crate::platform::user_shell_launch_argv(
+        shell.as_ref().map(|(shell, _)| shell.as_str()),
+        shell.as_ref().is_some_and(|(_, login)| *login),
+        argv,
+    )
+}
+
 fn pane_shell_from(configured_shell: &str, env_shell: Option<String>) -> String {
     let configured_shell = configured_shell.trim();
     if !configured_shell.is_empty() {

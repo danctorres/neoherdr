@@ -55,6 +55,10 @@ impl App {
                 self.handle_api_worktree_read_finished(*result);
                 changes_workspace
             }
+            AppEvent::UserShellPathProbed { generation, path } => {
+                self.handle_user_shell_path_probed(generation, path);
+                false
+            }
             ev @ AppEvent::TerminalBell { .. } => {
                 self.handle_internal_event(ev);
                 false
@@ -130,6 +134,11 @@ impl App {
         } = ev
         {
             self.handle_git_status_refreshed(results, cache_updates);
+            return Vec::new();
+        }
+
+        if let AppEvent::UserShellPathProbed { generation, path } = ev {
+            self.handle_user_shell_path_probed(generation, path);
             return Vec::new();
         }
 

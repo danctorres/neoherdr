@@ -236,19 +236,25 @@ impl App {
             height: binding.height,
         };
         if let Some(argv) = &binding.argv {
-            if !crate::platform::executable_on_path(&argv[0]) {
-                let executable = shell_quote(&argv[0]);
-                let message = format!(
-                    "printf '\\n[neoherdr] {executable} not found on PATH. Press Enter to close.\\n'; IFS= read -r _ || true"
-                );
-                return self.spawn_popup_shell_command(
-                    &message,
+            if !self.user_shell_executable_resolves(&argv[0]) {
+                let notice = crate::platform::exit_notice_argv(&format!(
+                    "[herdr] {} not found on PATH — press Enter to close",
+                    argv[0]
+                ));
+                return self.spawn_popup_argv_command(
+                    &notice,
                     None,
                     self.custom_command_env().0,
                     geometry,
                 );
             }
-            self.spawn_popup_argv_command(argv, None, self.custom_command_env().0, geometry)?;
+            let launch_argv = self.user_shell_launch_argv(argv);
+            self.spawn_popup_argv_command(
+                &launch_argv,
+                None,
+                self.custom_command_env().0,
+                geometry,
+            )?;
             let popup_terminal = self
                 .state
                 .popup_pane
@@ -296,13 +302,14 @@ impl App {
                 })
                 .or(env_cwd)
         };
-        let argv = binding.argv.clone().unwrap_or_else(|| {
-            binding
+        let argv = match &binding.argv {
+            Some(argv) => self.user_shell_launch_argv(argv),
+            None => binding
                 .command
                 .split_whitespace()
                 .map(str::to_string)
-                .collect()
-        });
+                .collect(),
+        };
         let (tab_idx, mut terminal, runtime) = self
             .state
             .workspaces
@@ -318,9 +325,9 @@ impl App {
                 self.state.host_terminal_theme,
                 self.state.host_terminal_appearance,
             )?;
-        if binding.argv.is_some() {
+        if let Some(tui_argv) = &binding.argv {
             // Configured TUIs stay open with an exit notice when they fail.
-            terminal.hold_on_failure = argv.first().cloned();
+            terminal.hold_on_failure = tui_argv.first().cloned();
         }
         let pane_id = self.state.workspaces[ws_idx].tabs[tab_idx].root_pane;
         self.terminal_runtimes.insert(terminal.id.clone(), runtime);
@@ -329,6 +336,14 @@ impl App {
         self.state.switch_workspace_tab(ws_idx, tab_idx);
         self.state.mode = Mode::Terminal;
         Ok(())
+    }
+
+    /// Configured TUI argv wrapped to run through the user's shell.
+    fn user_shell_launch_argv(&self, argv: &[String]) -> Vec<String> {
+        crate::pane::user_shell_launch_argv(
+            crate::pane::PaneShellConfig::new(&self.state.default_shell, self.state.shell_mode),
+            argv,
+        )
     }
 
     pub(crate) fn custom_command_env(&self) -> (Vec<(String, String)>, Option<std::path::PathBuf>) {
@@ -613,10 +628,6 @@ impl App {
         self.state.mode = Mode::Terminal;
         Ok((ws_idx, new_pane))
     }
-}
-
-fn shell_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 fn write_scrollback_temp_file(content: &str) -> io::Result<std::path::PathBuf> {

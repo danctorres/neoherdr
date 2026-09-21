@@ -55,6 +55,25 @@ pub(crate) fn exit_notice_argv(message: &str) -> Vec<String> {
     ]
 }
 
+/// Windows has no rc-file shell environment to pick up: argv runs directly.
+pub(crate) fn user_shell_launch_argv(
+    _shell: Option<&str>,
+    _login: bool,
+    argv: &[String],
+) -> Vec<String> {
+    argv.to_vec()
+}
+
+/// Windows discovery uses this process's `PATH` only.
+#[cfg(not(test))]
+pub(crate) fn probe_user_shell_path(
+    _shell: &str,
+    _login: bool,
+    _timeout: std::time::Duration,
+) -> Option<std::ffi::OsString> {
+    None
+}
+
 pub(crate) struct RemoteBridgeWake;
 
 impl RemoteBridgeWake {

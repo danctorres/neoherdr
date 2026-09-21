@@ -25,6 +25,7 @@ mod tab_bar_status;
 mod terminal_targets;
 mod terminal_titles;
 mod theme_sync;
+mod user_shell;
 mod window_title;
 mod worktrees;
 
@@ -155,6 +156,7 @@ pub struct App {
     pub(crate) render_dirty: Arc<crate::render_signal::RenderSignal>,
     pub(crate) full_redraw_pending: bool,
     pub(crate) overlay_panes: HashMap<crate::layout::PaneId, OverlayPaneState>,
+    pub(crate) user_shell_path: user_shell::UserShellPath,
     pub(crate) config_reloaded_from_disk: bool,
     client_shell_keybindings_profile: Option<String>,
     endpoint_commands: custom_commands::EndpointCommandRegistry,
@@ -657,6 +659,11 @@ impl App {
             render_dirty,
             full_redraw_pending: false,
             overlay_panes: HashMap::new(),
+            // Tests never probe the developer's real shell.
+            #[cfg(not(test))]
+            user_shell_path: user_shell::UserShellPath::production(),
+            #[cfg(test)]
+            user_shell_path: user_shell::UserShellPath::new(std::sync::Arc::new(|_, _| None)),
             config_reloaded_from_disk: false,
             client_shell_keybindings_profile,
             endpoint_commands,
@@ -781,6 +788,8 @@ impl App {
     }
 
     pub(crate) fn reload_config(&mut self) -> crate::config::ConfigReloadReport {
+        // Shell rc files may have changed along with the config.
+        self.user_shell_path.invalidate();
         self.apply_config_from_disk(true)
     }
 
@@ -1777,9 +1786,15 @@ mod tests {
         let mut app = test_app();
         app.next_auto_update_check = Some(Instant::now());
         app.next_agent_manifest_update_check = Some(Instant::now());
+        app.user_shell_path
+            .set_probed_path_for_test(Some("/probed".into()));
         let report = app.reload_config();
 
         assert_eq!(report.status, crate::config::ConfigReloadStatus::Applied);
+        assert!(
+            !app.user_shell_path.probe_started_for_test(),
+            "reload must forget the probed user shell PATH"
+        );
         assert_eq!(app.state.headless_size, (160, 50));
         assert_eq!(app.state.prefix_code, KeyCode::Char('a'));
         assert_eq!(app.state.prefix_mods, KeyModifiers::CONTROL);
@@ -3051,6 +3066,82 @@ mod tests {
         assert_eq!(workspace.focused_pane_id(), Some(other_pane));
 
         crate::app::api::test_support::shutdown_test_runtimes(&mut app);
+        let _ = std::fs::remove_dir_all(project);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    // The env lock must stay held while awaiting the probe so no other test
+    // changes PATH underneath it.
+    #[allow(clippy::await_holding_lock)]
+    async fn agents_found_only_by_the_user_shell_probe_are_listed_and_launch_through_it() {
+        let _guard = config_env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let original_path = std::env::var_os("PATH");
+        let empty = unique_temp_path("user-shell-probe-empty-path");
+        std::env::set_var("PATH", &empty);
+        let shell_dir = unique_temp_path("user-shell-probe-bin");
+        std::fs::create_dir_all(&shell_dir).unwrap();
+        std::fs::write(shell_dir.join("pi"), "#!/bin/sh\n").unwrap();
+
+        let (mut app, project) = agent_tab_test_app("user-shell-probe");
+        app.state.default_shell = "/bin/sh".into();
+        app.state.shell_mode = crate::config::ShellModeConfig::NonLogin;
+        let probed = shell_dir.clone().into_os_string();
+        app.user_shell_path =
+            user_shell::UserShellPath::new(std::sync::Arc::new(move |shell, _login| {
+                (shell == "/bin/sh").then(|| probed.clone())
+            }));
+        let kinds = || crate::api::schema::Request {
+            id: "req_agent_kinds".into(),
+            method: crate::api::schema::Method::AgentKinds(Default::default()),
+        };
+
+        // While the probe runs, discovery answers from the server's PATH.
+        let before: serde_json::Value =
+            serde_json::from_str(&app.handle_api_request(kinds())).unwrap();
+        assert_eq!(before["result"]["kinds"], serde_json::json!([]));
+        assert!(app.user_shell_path.probe_started_for_test());
+        loop {
+            let event = tokio::time::timeout(Duration::from_secs(5), app.event_rx.recv())
+                .await
+                .expect("probe result")
+                .expect("event channel open");
+            let probed = matches!(event, AppEvent::UserShellPathProbed { .. });
+            app.handle_internal_event(event);
+            if probed {
+                break;
+            }
+        }
+
+        let after: serde_json::Value =
+            serde_json::from_str(&app.handle_api_request(kinds())).unwrap();
+        assert_eq!(
+            after["result"]["kinds"],
+            serde_json::json!([{ "kind": "pi", "executable": "pi" }])
+        );
+        let opened: serde_json::Value =
+            serde_json::from_str(&app.handle_api_request(open_agent_tab_request("pi"))).unwrap();
+        assert_eq!(opened["result"]["type"], "tab_created", "{opened}");
+        assert_eq!(
+            agent_tab_terminal(&app).launch_argv.as_deref(),
+            Some(
+                &[
+                    "/bin/sh".to_string(),
+                    "-i".into(),
+                    "-c".into(),
+                    "exec pi".into()
+                ][..]
+            )
+        );
+
+        crate::app::api::test_support::shutdown_test_runtimes(&mut app);
+        match original_path {
+            Some(path) => std::env::set_var("PATH", path),
+            None => std::env::remove_var("PATH"),
+        }
+        let _ = std::fs::remove_dir_all(shell_dir);
         let _ = std::fs::remove_dir_all(project);
     }
 

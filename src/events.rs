@@ -193,6 +193,11 @@ pub enum AppEvent {
         results: Vec<WorkspaceGitStatus>,
         cache_updates: Vec<(std::path::PathBuf, GitStatusCacheEntry)>,
     },
+    /// The user shell's `PATH` probe finished (`None` when it failed).
+    UserShellPathProbed {
+        generation: u64,
+        path: Option<std::ffi::OsString>,
+    },
     /// A configured tab bar status command finished.
     TabBarCommandFinished {
         generation: u64,
