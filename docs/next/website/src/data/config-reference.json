@@ -533,7 +533,7 @@
           "key": "keys.tui_menu",
           "type": "keybinding",
           "default": "\"prefix+o\"",
-          "description": "Open the menu of TUIs configured in tuis.toml. Only shown when at least one TUI is configured."
+          "description": "Open the menu of TUIs configured as `[[tui]]` entries. Only shown when at least one TUI is configured."
         },
         {
           "key": "keys.settings",
