@@ -161,6 +161,11 @@ fn channel_set(args: &[String]) -> std::io::Result<i32> {
         return Ok(2);
     };
 
+    if let Some(reason) = crate::update::self_update_unavailable_reason() {
+        eprintln!("{reason}");
+        return Ok(1);
+    }
+
     if let Some(reason) = channel_set_rejection(
         channel,
         crate::update::preview_channel_rejection_for_current_install(),
@@ -1081,6 +1086,13 @@ mod tests {
             None
         );
         assert_eq!(super::channel_set_rejection("preview", None), None);
+    }
+
+    #[test]
+    fn channel_set_without_update_source_fails_before_touching_config() {
+        let _source = crate::build_info::test_update_source::set(None);
+
+        assert_eq!(super::channel_set(&["stable".to_string()]).ok(), Some(1));
     }
 
     #[test]

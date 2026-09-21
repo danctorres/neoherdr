@@ -171,6 +171,12 @@ fn background_update_check_enabled(background_updates: bool, check_enabled: bool
     auto_updates_enabled(background_updates) && check_enabled
 }
 
+/// Version checks only run for builds with an update source, whatever the
+/// `[update] version_check` setting says.
+fn version_check_configured(config: &Config) -> bool {
+    crate::build_info::update_source().is_some() && config.update.version_check
+}
+
 fn load_plugin_registry(
     persist_plugin_registry: bool,
 ) -> crate::app::state::InstalledPluginRegistry {
@@ -441,7 +447,11 @@ impl App {
             "using pane scrollback configuration"
         );
 
-        let latest_release_notes = crate::release_notes::load_latest();
+        // Saved notes come from a hosted update check. Builds without an
+        // update source ignore any left behind by an upstream install that
+        // shares the config directory.
+        let latest_release_notes =
+            crate::build_info::update_source().and_then(|_| crate::release_notes::load_latest());
         let update_available = latest_release_notes
             .as_ref()
             .filter(|notes| notes.preview)
@@ -562,8 +572,10 @@ impl App {
         // Background auto-update is disabled for non-persistent test apps
         // and in debug/test builds so local development never mutates the
         // running binary out from under spawned test processes.
-        let version_check_enabled =
-            background_update_check_enabled(policy.background_updates, config.update.version_check);
+        let version_check_enabled = background_update_check_enabled(
+            policy.background_updates,
+            version_check_configured(config),
+        );
         let manifest_check_enabled = background_update_check_enabled(
             policy.background_updates,
             config.update.manifest_check,
@@ -615,7 +627,7 @@ impl App {
                 .then_some(Instant::now() + AUTO_UPDATE_CHECK_INTERVAL),
             next_agent_manifest_update_check: manifest_check_enabled
                 .then_some(Instant::now() + AUTO_UPDATE_CHECK_INTERVAL),
-            update_version_check_enabled: config.update.version_check,
+            update_version_check_enabled: version_check_configured(config),
             update_manifest_check_enabled: config.update.manifest_check,
             loaded_host_cursor: config.ui.host_cursor,
             agent_metadata_deadline: None,
@@ -932,7 +944,7 @@ impl App {
             let now = Instant::now();
             let previous_version_check_enabled = self.update_version_check_enabled;
             let previous_manifest_check_enabled = self.update_manifest_check_enabled;
-            self.update_version_check_enabled = config.update.version_check;
+            self.update_version_check_enabled = version_check_configured(config);
             self.update_manifest_check_enabled = config.update.manifest_check;
 
             if !self.update_version_check_enabled {
@@ -1525,6 +1537,9 @@ mod tests {
     #[test]
     fn startup_restores_preview_update_available_from_saved_notes() {
         let _guard = config_env_lock().lock().unwrap();
+        let _update_source = crate::build_info::test_update_source::set(Some(
+            crate::build_info::UpdateSource::HerdrDev,
+        ));
         let path = temp_config_path("startup-preview-update-available");
         std::env::set_var(crate::config::CONFIG_PATH_ENV_VAR, &path);
 
@@ -1545,6 +1560,34 @@ mod tests {
 
         std::env::remove_var(crate::config::CONFIG_PATH_ENV_VAR);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn startup_ignores_saved_release_notes_without_update_source() {
+        let _guard = config_env_lock().lock().unwrap();
+        let _update_source = crate::build_info::test_update_source::set(None);
+        let path = temp_config_path("startup-no-update-source");
+        std::env::set_var(crate::config::CONFIG_PATH_ENV_VAR, &path);
+
+        crate::release_notes::save_pending("99.99.99", "### Changed\n- Upstream").unwrap();
+
+        let app = test_app();
+
+        assert_eq!(app.state.update_available, None);
+        assert!(!app.state.latest_release_notes_available);
+        assert!(app.state.latest_release_notes.is_none());
+
+        std::env::remove_var(crate::config::CONFIG_PATH_ENV_VAR);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn version_check_is_off_without_update_source_even_when_configured() {
+        let _update_source = crate::build_info::test_update_source::set(None);
+        let config = Config::default();
+        assert!(config.update.version_check);
+
+        assert!(!version_check_configured(&config));
     }
 
     #[test]
@@ -1577,6 +1620,9 @@ mod tests {
     #[test]
     fn release_notes_dismiss_api_marks_current_seen_but_keeps_preview_unseen() {
         let _guard = config_env_lock().lock().unwrap();
+        let _update_source = crate::build_info::test_update_source::set(Some(
+            crate::build_info::UpdateSource::HerdrDev,
+        ));
         let path = temp_config_path("release-notes-dismiss-persistence");
         std::env::set_var(crate::config::CONFIG_PATH_ENV_VAR, &path);
 
@@ -1618,6 +1664,9 @@ mod tests {
     #[test]
     fn startup_does_not_restore_update_available_from_older_saved_notes() {
         let _guard = config_env_lock().lock().unwrap();
+        let _update_source = crate::build_info::test_update_source::set(Some(
+            crate::build_info::UpdateSource::HerdrDev,
+        ));
         let path = temp_config_path("startup-stale-update-notes");
         std::env::set_var(crate::config::CONFIG_PATH_ENV_VAR, &path);
 
@@ -1635,6 +1684,9 @@ mod tests {
     #[test]
     fn startup_keeps_pending_release_notes_available_without_auto_opening() {
         let _guard = config_env_lock().lock().unwrap();
+        let _update_source = crate::build_info::test_update_source::set(Some(
+            crate::build_info::UpdateSource::HerdrDev,
+        ));
         let path = temp_config_path("startup-pending-release-notes-no-auto-open");
         std::env::set_var(crate::config::CONFIG_PATH_ENV_VAR, &path);
 

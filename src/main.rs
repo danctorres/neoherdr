@@ -120,12 +120,11 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # kitty_graphics = true
 
 [update]
-# Update channel used by background version checks and `herdr update`.
-# Stable builds default to "stable". Windows preview builds default to "preview"
-# so existing preview installs stay there until explicitly switched.
+# neoherdr is built from source and has no update source: `herdr update` and
+# `herdr channel set` only print how to rebuild, and `channel` and
+# `version_check` have no effect. Update with:
+#   cargo install --locked --git https://github.com/danctorres/neoherdr
 # channel = "stable"
-
-# Check herdr.dev for new Herdr versions in the background.
 # version_check = true
 
 # Check herdr.dev for remote agent-detection manifest updates in the background.
@@ -597,7 +596,9 @@ fn main() -> io::Result<()> {
         match update::self_update(options) {
             Ok(_) => return Ok(()),
             Err(e) => {
-                if e.starts_with("self-update is disabled") {
+                if e.starts_with("self-update is disabled")
+                    || update::self_update_unavailable_reason() == Some(e.as_str())
+                {
                     eprintln!("{e}");
                 } else {
                     eprintln!("update failed: {e}");

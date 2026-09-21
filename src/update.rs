@@ -2108,8 +2108,22 @@ fn homebrew_cellar_keg_root(path: &Path) -> Option<PathBuf> {
 // Public API
 // ---------------------------------------------------------------------------
 
+/// Why this build cannot update itself, if it cannot.
+///
+/// Builds without an update source must never fetch or install a hosted
+/// release: for neoherdr that release would be upstream herdr.
+pub(crate) fn self_update_unavailable_reason() -> Option<&'static str> {
+    crate::build_info::update_source()
+        .is_none()
+        .then_some(crate::build_info::FROM_SOURCE_UPDATE_HINT)
+}
+
 /// Manual self-update command (`herdr update`).
 pub fn self_update(options: SelfUpdateOptions) -> Result<Version, String> {
+    if let Some(reason) = self_update_unavailable_reason() {
+        return Err(reason.to_string());
+    }
+
     let channel = UpdateChannel::configured();
 
     if is_homebrew_managed_install() {
@@ -2242,6 +2256,10 @@ fn print_outdated_integration_notice_with_updated_binary(updated_exe: &Path) {
 /// Background update check: only surface availability and release notes.
 /// Runs in a background thread at startup.
 pub fn auto_update(events: tokio::sync::mpsc::Sender<crate::events::AppEvent>) {
+    if crate::build_info::update_source().is_none() {
+        tracing::debug!("skipping version check: this build has no update source");
+        return;
+    }
     crate::logging::update_check_started();
     if let Ok(version) = env::var(FAKE_UPDATE_VERSION_ENV) {
         let version = version.trim();
@@ -3816,5 +3834,37 @@ mod tests {
                     .is_some_and(|value| value.len() == 64));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod update_source_tests {
+    use super::*;
+
+    #[test]
+    fn self_update_without_update_source_points_at_building_from_source() {
+        let _source = crate::build_info::test_update_source::set(None);
+
+        assert_eq!(
+            self_update(SelfUpdateOptions::default()).map(|version| version.to_string()),
+            Err(
+                "neoherdr is built from source; update with: cargo install --locked --git https://github.com/danctorres/neoherdr"
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn auto_update_without_update_source_never_reports_an_update() {
+        let _source = crate::build_info::test_update_source::set(None);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(4);
+        // The fake-version path is the easiest way to force an update toast;
+        // a build without an update source must ignore it too.
+        std::env::set_var(FAKE_UPDATE_VERSION_ENV, "99.0.0");
+
+        auto_update(tx);
+
+        std::env::remove_var(FAKE_UPDATE_VERSION_ENV);
+        assert!(rx.try_recv().is_err());
     }
 }

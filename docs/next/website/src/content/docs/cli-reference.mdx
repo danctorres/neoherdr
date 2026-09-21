@@ -13,11 +13,9 @@ Most commands print JSON responses for deterministic automation in scripts.
 herdr                         # launch or attach to the default session
 herdr --remote workbox        # attach through SSH, using local keybindings
 herdr --default-config        # print default config
-herdr update                  # download and install from the configured channel
+herdr update                  # print how to rebuild neoherdr from source
 herdr completion zsh          # generate a zsh completion script
-herdr channel show            # print stable or preview
-herdr channel set preview     # opt into preview builds
-herdr channel set stable      # return a direct install to stable
+herdr channel show            # print the configured channel (unused by neoherdr)
 herdr --version               # print version
 ```
 
