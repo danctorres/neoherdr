@@ -392,6 +392,29 @@ description = "test"
 
 Pressing `prefix+m` opens the menu; pressing `b` or `t` runs the matching member. Which-key lists each menu at the top level as `+` and its description, such as `+workspace`, `+tab`, or `+scripts`. `esc` backs out to the top-level prefix menu. Menus are one level deep: a member entry cannot itself be a group opener. A member key that duplicates another user key in the same menu, or a `group` id with no matching menu, is rejected with a config diagnostic and the offending binding is disabled.
 
+A member can also run a built-in action instead of a command: set `action` to the action's `keys.<action>` field name and leave out `command` and `type`. The agent picker, which has no `keys.*` field, is `new_agent_tab`. The built-in menus are defined the same way, so any of them can be rebuilt or rearranged in your own config:
+
+```toml
+[[keys.command]]
+key = "prefix+v"
+type = "group"
+group = "win"
+description = "windows"
+
+[[keys.command]]
+key = "v"
+group = "win"
+action = "split_vertical"
+
+[[keys.command]]
+key = "s"
+group = "win"
+action = "split_horizontal"
+description = "stack"
+```
+
+An `action` entry must set `group`; for a top-level key, set the `keys.<action>` field instead. Its description defaults to the action's own label. An entry that sets `action` together with `command` or `type`, or names an unknown action, is rejected with a config diagnostic.
+
 Custom commands receive `HERDR_SOCKET_PATH`, `HERDR_BIN_PATH`, `HERDR_ACTIVE_WORKSPACE_ID`, `HERDR_ACTIVE_TAB_ID`, `HERDR_ACTIVE_PANE_ID`, and `HERDR_ACTIVE_PANE_CWD` when those values are available. Shell commands run from the focused pane's working directory when Herdr can detect it.
 
 On Windows, custom command strings use `cmd.exe /d /c`, so environment variables use `%HERDR_BIN_PATH%` syntax. To run PowerShell syntax, invoke it explicitly, for example `powershell.exe -NoProfile -Command "..."`.
