@@ -168,7 +168,12 @@ pub(crate) fn executable_on_path(executable: &str) -> bool {
     executable_on_search_path(executable, std::env::var_os("PATH").as_deref())
 }
 
-fn executable_on_search_path(executable: &str, search_path: Option<&std::ffi::OsStr>) -> bool {
+/// Like [`executable_on_path`], searching `search_path` instead of this
+/// process's `PATH`.
+pub(crate) fn executable_on_search_path(
+    executable: &str,
+    search_path: Option<&std::ffi::OsStr>,
+) -> bool {
     if executable.contains(std::path::MAIN_SEPARATOR) {
         return std::path::Path::new(executable).is_file();
     }
@@ -407,8 +412,11 @@ pub(crate) mod unix_image_files;
 pub(crate) use unix_common::{
     begin_cli_output, end_cli_output, exit_notice_argv, forward_remote_bridge_stdio,
     ignore_server_hangup, local_stream_peer_description, spawn_server_signal_monitor,
-    RemoteBridgeWake,
+    user_shell_launch_argv, RemoteBridgeWake,
 };
+// Test builds inject a fake probe instead of starting the user's shell.
+#[cfg(all(unix, not(test)))]
+pub(crate) use unix_common::probe_user_shell_path;
 
 mod client_state;
 pub(crate) use client_state::{create_private_state_file, replace_file, sync_parent_directory};

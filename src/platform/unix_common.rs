@@ -54,6 +54,150 @@ pub(crate) fn exit_notice_argv(message: &str) -> Vec<String> {
     ]
 }
 
+#[derive(Clone, Copy)]
+enum UserShellFlavor {
+    Posix,
+    Fish,
+}
+
+/// Shells whose `-i -c` mode, `exec` builtin, and quoting rules the user-shell
+/// launch relies on. Other shells run argv directly.
+fn user_shell_flavor(shell: &str) -> Option<UserShellFlavor> {
+    let name = shell.rsplit('/').next().unwrap_or(shell);
+    match name.trim_start_matches('-') {
+        "sh" | "bash" | "zsh" | "ksh" | "mksh" | "dash" | "ash" => Some(UserShellFlavor::Posix),
+        "fish" => Some(UserShellFlavor::Fish),
+        _ => None,
+    }
+}
+
+impl UserShellFlavor {
+    fn quote(self, value: &str) -> String {
+        match self {
+            Self::Posix => shell_quote(value),
+            // Inside fish single quotes, `\\` and `\'` are the only escapes.
+            Self::Fish => format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'")),
+        }
+    }
+}
+
+fn user_shell_args(shell: &str, login: bool) -> Option<(UserShellFlavor, Vec<String>)> {
+    let shell = shell.trim();
+    if shell.is_empty() {
+        return None;
+    }
+    let flavor = user_shell_flavor(shell)?;
+    let mut args = vec![shell.to_owned()];
+    if login {
+        args.push("-l".to_owned());
+    }
+    args.extend(["-i".to_owned(), "-c".to_owned()]);
+    Some((flavor, args))
+}
+
+/// Runs `argv` through the user's interactive shell so rc-file environment
+/// (PATH additions, exported API keys) applies, the way a new shell tab gets
+/// it. `exec` replaces the shell, so the pane's exit status is the program's
+/// own. Without a supported shell, `argv` runs directly.
+pub(crate) fn user_shell_launch_argv(
+    shell: Option<&str>,
+    login: bool,
+    argv: &[String],
+) -> Vec<String> {
+    let Some((flavor, mut launch)) = shell.and_then(|shell| user_shell_args(shell, login)) else {
+        return argv.to_vec();
+    };
+    if argv.is_empty() {
+        return Vec::new();
+    }
+    let command = argv
+        .iter()
+        .map(|arg| flavor.quote(arg))
+        .collect::<Vec<_>>()
+        .join(" ");
+    launch.push(format!("exec {command}"));
+    launch
+}
+
+const USER_SHELL_PATH_MARKER: &str = "__HERDR_USER_SHELL_PATH__=";
+
+/// The `PATH` the user's interactive `shell` has after its rc files run, or
+/// `None` when the shell is unsupported, fails, or exceeds `timeout`. Blocks
+/// the calling thread, so run it off the event loop. The shell runs in its own
+/// session without a controlling terminal, so it cannot grab the server's.
+pub(crate) fn probe_user_shell_path(
+    shell: &str,
+    login: bool,
+    timeout: std::time::Duration,
+) -> Option<std::ffi::OsString> {
+    use std::io::BufRead;
+    use std::os::unix::ffi::OsStringExt;
+    use std::os::unix::process::CommandExt;
+
+    let (_, args) = user_shell_args(shell, login)?;
+    let mut command = std::process::Command::new(&args[0]);
+    command
+        .args(&args[1..])
+        .arg(format!(
+            "printf '\\n{USER_SHELL_PATH_MARKER}%s\\n' \"$PATH\""
+        ))
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+    // SAFETY: the pre-exec hook only calls the async-signal-safe setsid.
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let mut child = command.spawn().ok()?;
+    let stdout = child.stdout.take()?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    // rc files may leave background jobs holding stdout open, so stop at the
+    // marker line instead of waiting for EOF.
+    std::thread::spawn(move || {
+        let mut reader = std::io::BufReader::new(stdout);
+        let mut line = Vec::new();
+        loop {
+            line.clear();
+            match reader.read_until(b'\n', &mut line) {
+                Ok(0) | Err(_) => return,
+                Ok(_) => {}
+            }
+            if let Some(path) = line.strip_prefix(USER_SHELL_PATH_MARKER.as_bytes()) {
+                let _ = tx.send(path.strip_suffix(b"\n").unwrap_or(path).to_vec());
+                return;
+            }
+        }
+    });
+    let deadline = std::time::Instant::now() + timeout;
+    let path = rx.recv_timeout(timeout).ok();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            _ => {
+                if let Ok(pid) = i32::try_from(child.id()) {
+                    // SAFETY: signals only the probe's own session process group.
+                    unsafe {
+                        libc::kill(-pid, libc::SIGKILL);
+                    }
+                }
+                let _ = child.kill();
+                let _ = child.wait();
+                break;
+            }
+        }
+    }
+    path.filter(|path| !path.is_empty())
+        .map(std::ffi::OsString::from_vec)
+}
+
 pub(crate) fn shutdown_client_stream(stream: &crate::ipc::LocalStream) -> std::io::Result<()> {
     let crate::ipc::LocalStream::UdSocket(stream) = stream;
     stream.inner().shutdown(std::net::Shutdown::Both)
@@ -617,6 +761,70 @@ mod tests {
         assert_eq!(
             String::from_utf8_lossy(&output.stdout),
             format!("\n{message}\n")
+        );
+    }
+
+    fn strings(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_owned()).collect()
+    }
+
+    #[test]
+    fn user_shell_launch_execs_quoted_argv_through_an_interactive_shell() {
+        assert_eq!(
+            user_shell_launch_argv(Some("/bin/zsh"), false, &strings(&["gh", "dash"])),
+            strings(&["/bin/zsh", "-i", "-c", "exec gh dash"])
+        );
+        assert_eq!(
+            user_shell_launch_argv(Some("/usr/bin/bash"), true, &strings(&["my tool", "it's"])),
+            strings(&[
+                "/usr/bin/bash",
+                "-l",
+                "-i",
+                "-c",
+                r"exec 'my tool' 'it'\''s'"
+            ])
+        );
+        assert_eq!(
+            user_shell_launch_argv(Some("fish"), false, &strings(&[r"a\b", "it's"])),
+            strings(&["fish", "-i", "-c", r"exec 'a\\b' 'it\'s'"])
+        );
+    }
+
+    #[test]
+    fn user_shell_launch_runs_argv_directly_without_a_supported_shell() {
+        let argv = strings(&["lazygit"]);
+        assert_eq!(user_shell_launch_argv(None, false, &argv), argv);
+        assert_eq!(user_shell_launch_argv(Some("  "), false, &argv), argv);
+        assert_eq!(
+            user_shell_launch_argv(Some("/usr/bin/nu"), true, &argv),
+            argv
+        );
+        assert_eq!(user_shell_launch_argv(Some("pwsh"), false, &argv), argv);
+    }
+
+    #[test]
+    fn user_shell_launch_argv_runs_the_exact_argv() {
+        let argv = user_shell_launch_argv(
+            Some("/bin/sh"),
+            false,
+            &strings(&["printf", "%s|%s", "it's ok", "$HOME"]),
+        );
+        let output = std::process::Command::new(&argv[0])
+            .args(&argv[1..])
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "it's ok|$HOME");
+    }
+
+    #[test]
+    fn user_shell_path_probe_reads_the_shell_path() {
+        let path = probe_user_shell_path("/bin/sh", false, std::time::Duration::from_secs(5));
+        assert!(path.is_some_and(|path| !path.is_empty()));
+        assert_eq!(
+            probe_user_shell_path("/usr/bin/nu", false, std::time::Duration::from_secs(1)),
+            None
         );
     }
 
