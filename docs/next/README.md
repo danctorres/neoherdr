@@ -1,5 +1,6 @@
-# herdr
+# neoherdr
 
+> **neoherdr is a fork of [herdr](https://github.com/herdrdev/herdr) with a different philosophy: keyboard-first instead of mouse-first.** Every action is reachable and discoverable through a prefix/which-key keymap; the mouse stays supported as a secondary input path, not the primary design target. The CLI binary and command are still called `herdr` and config/protocol stay compatible; `neoherdr` names this fork's package and repository, not the tool you type.
 
 <p align="center">
   <img src="assets/logo.png" alt="herdr" width="100" />
@@ -33,7 +34,7 @@ https://github.com/user-attachments/assets/043ec09f-4bdd-41d5-aee0-8fda6b83e267
 - **never hunt for the stuck one** — every pane is marked working, blocked, or idle. when an agent stops and needs an answer, herdr says so.
 - **agent-native** — agents drive herdr through the cli and socket api: they can spawn panes, prompt each other, and wait until another agent is genuinely blocked. [agent skill →](https://herdr.dev/docs/agent-skill/)
 - **runs what you already run** — claude code, codex, cursor, opencode, grok and the rest. herdr doesn't wrap or replace them; it owns their terminals.
-- **keyboard and mouse, both first-class** — tmux-style prefix keys *and* click, drag, split. pick per moment, not per tool.
+- **keyboard-first** — a discoverable prefix/which-key keymap gets you everywhere without memorizing it; mouse click, drag, and split stay fully supported as a secondary path.
 - **plugins** — extend panes and workflows. [browse the marketplace →](https://herdr.dev/plugins/)
 - **one rust binary, no electron** — runs in whatever terminal you already use.
 

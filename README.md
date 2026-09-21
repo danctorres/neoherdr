@@ -1,5 +1,6 @@
-# herdr
+# neoherdr
 
+> **neoherdr is a fork of [herdr](https://github.com/herdrdev/herdr) with a different philosophy: keyboard-first instead of mouse-first.** Every action is reachable and discoverable through a prefix/which-key keymap; the mouse stays supported as a secondary input path, not the primary design target. The CLI binary and command are still called `herdr` and config/protocol stay compatible; `neoherdr` names this fork's package and repository, not the tool you type.
 
 <p align="center">
   <img src="assets/logo.png" alt="herdr" width="100" />
@@ -12,6 +13,7 @@
 <p align="center">
   English · <a href="README.zh-CN.md">简体中文</a>
 </p>
+
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-666666?labelColor=333333" alt="Apache 2.0 license" /></a>
@@ -33,7 +35,7 @@ https://github.com/user-attachments/assets/043ec09f-4bdd-41d5-aee0-8fda6b83e267
 - **never hunt for the stuck one** — every pane is marked working, blocked, or idle. when an agent stops and needs an answer, herdr says so.
 - **agent-native** — agents drive herdr through the cli and socket api: they can spawn panes, prompt each other, and wait until another agent is genuinely blocked. [agent skill →](https://herdr.dev/docs/agent-skill/)
 - **runs what you already run** — claude code, codex, cursor, opencode, grok and the rest. herdr doesn't wrap or replace them; it owns their terminals.
-- **keyboard and mouse, both first-class** — tmux-style prefix keys *and* click, drag, split. pick per moment, not per tool.
+- **keyboard-first** — a discoverable prefix/which-key keymap gets you everywhere without memorizing it; mouse click, drag, and split stay fully supported as a secondary path.
 - **plugins** — extend panes and workflows. [browse the marketplace →](https://herdr.dev/plugins/)
 - **one rust binary, no electron** — runs in whatever terminal you already use.
 
@@ -71,11 +73,29 @@ if you are an ai agent helping with this repository, read [`AGENTS.md`](./AGENTS
 
 ## development
 
+prerequisites: rust 1.96.1 (pinned in `rust-toolchain.toml`, installed automatically by rustup) and zig 0.16.0 on your `PATH` (or pointed to by the `ZIG` env var) — the build shells out to `zig build` for the vendored terminal library, and fails without it. [install zig →](https://ziglang.org/download/)
+
 ```bash
 git clone https://github.com/herdrdev/herdr
 cd herdr
-cargo build --release
+cargo build --release   # or plain `cargo build` for a faster debug build
+```
 
+run what you built:
+
+```bash
+./target/release/herdr
+```
+
+if you are already inside a herdr session, clear the inherited socket overrides so the new binary talks to its own dev server instead of the running one:
+
+```bash
+env -u HERDR_SOCKET_PATH -u HERDR_CLIENT_SOCKET_PATH cargo run -- <command>
+```
+
+`just` recipes wrap the common workflows — install [just](https://just.systems/) first, then:
+
+```bash
 just test        # unit tests
 just check       # formatting, tests, and maintenance checks
 ```
