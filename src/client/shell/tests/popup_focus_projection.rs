@@ -552,10 +552,12 @@ fn popup_command_blocks_underlying_input_until_surface_or_error() {
         bindings: crate::config::ActionKeybinds::prefix("t"),
         label: "prefix+t".into(),
         command: "secret-popup-command".into(),
+        argv: None,
         action: crate::config::CustomCommandAction::Popup,
         description: None,
         width: None,
         height: None,
+        group: None,
     };
     let mut projection = snapshot();
     projection
@@ -605,10 +607,12 @@ fn popup_command_blocks_underlying_input_until_surface_or_error() {
         bindings: crate::config::ActionKeybinds::prefix("t"),
         label: "prefix+t".into(),
         command: "secret-popup-command".into(),
+        argv: None,
         action: crate::config::CustomCommandAction::Popup,
         description: None,
         width: None,
         height: None,
+        group: None,
     };
     let mut invoke = ClientShellInput::default();
     state.record_binding(crate::input::KeybindMatch::Command(binding), &mut invoke);

@@ -133,19 +133,19 @@ impl Config {
         let content = match read_optional_config(&path) {
             Ok(Some(content)) => content,
             Ok(None) => {
-                return LoadedConfig {
+                return with_tuis(LoadedConfig {
                     config: Self::default(),
                     diagnostics: Vec::new(),
                     invalid_sections: Vec::new(),
-                };
+                });
             }
             Err(err) => {
                 warn!(err = %err, "config read error, using defaults");
-                return LoadedConfig {
+                return with_tuis(LoadedConfig {
                     config: Self::default(),
                     diagnostics: vec![format!("config read error: {err}; using defaults")],
                     invalid_sections: Vec::new(),
-                };
+                });
             }
         };
 
@@ -163,19 +163,19 @@ impl Config {
                     None,
                 ));
                 diagnostics.extend(config.collect_diagnostics());
-                LoadedConfig {
+                with_tuis(LoadedConfig {
                     config,
                     diagnostics,
                     invalid_sections: Vec::new(),
-                }
+                })
             }
             Err(err) => {
                 warn!(err = %err, "config parse error, using defaults");
-                LoadedConfig {
+                with_tuis(LoadedConfig {
                     config: Self::default(),
                     diagnostics: vec![format!("config parse error: {err}; using defaults")],
                     invalid_sections: Vec::new(),
-                }
+                })
             }
         }
     }
@@ -247,11 +247,11 @@ pub fn load_live_config() -> Result<LoadedConfig, Vec<String>> {
     let content = match read_optional_config(&path) {
         Ok(Some(content)) => content,
         Ok(None) => {
-            return Ok(LoadedConfig {
+            return Ok(with_tuis(LoadedConfig {
                 config: Config::default(),
                 diagnostics: Vec::new(),
                 invalid_sections: Vec::new(),
-            });
+            }));
         }
         Err(err) => {
             return Err(vec![format!(
@@ -378,11 +378,23 @@ fn load_live_config_from_str(content: &str) -> Result<LoadedConfig, Vec<String>>
 
     diagnostics.extend(config.theme.diagnostics());
 
-    Ok(LoadedConfig {
+    Ok(with_tuis(LoadedConfig {
         config,
         diagnostics,
         invalid_sections,
-    })
+    }))
+}
+
+/// Attaches the TUI launcher entries from `tuis.toml` to a loaded config.
+///
+/// TUI diagnostics are recorded on the config and appended after the
+/// config's own diagnostics.
+fn with_tuis(mut loaded: LoadedConfig) -> LoadedConfig {
+    let (tuis, tui_diagnostics) = super::load_tuis();
+    loaded.config.tuis = tuis;
+    loaded.diagnostics.extend(tui_diagnostics.iter().cloned());
+    loaded.config.tui_diagnostics = tui_diagnostics;
+    loaded
 }
 
 fn unknown_top_level_sections_from_str(content: &str) -> (Vec<String>, Vec<String>) {

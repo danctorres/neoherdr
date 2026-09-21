@@ -95,7 +95,6 @@ impl App {
             },
         )
     }
-
     fn spawn_popup_command<F>(
         &mut self,
         cwd: Option<PathBuf>,

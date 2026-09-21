@@ -118,14 +118,27 @@ impl App {
         let Some(plugin_id) = normalize_plugin_id(&params.plugin_id) else {
             return invalid_plugin_id(id);
         };
-        let removed =
-            match self.update_installed_plugins(|plugins| plugins.remove(&plugin_id).is_some()) {
-                Ok(removed) => removed,
-                Err(err) => {
-                    return encode_error(id, "plugin_registry_save_failed", err.to_string());
+        let removed = match self.update_installed_plugins(|plugins| {
+            if let Some(plugin) = plugins.get_mut(&plugin_id) {
+                if crate::plugin_paths::is_builtin_plugin(plugin) {
+                    plugin.enabled = false;
+                    return true;
                 }
-            };
-        if removed {
+            }
+            plugins.remove(&plugin_id).is_some()
+        }) {
+            Ok(removed) => removed,
+            Err(err) => {
+                return encode_error(id, "plugin_registry_save_failed", err.to_string());
+            }
+        };
+        if removed
+            && !self
+                .state
+                .installed_plugins
+                .get(&plugin_id)
+                .is_some_and(crate::plugin_paths::is_builtin_plugin)
+        {
             // Drop plugin_panes records for this plugin (panes keep running).
             self.state
                 .plugin_panes

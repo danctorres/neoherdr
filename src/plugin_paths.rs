@@ -6,6 +6,18 @@ pub(crate) fn managed_plugins_dir() -> PathBuf {
     crate::config::config_dir().join("plugins")
 }
 
+pub(crate) fn builtin_plugin_dir(plugin_id: &str) -> PathBuf {
+    managed_plugins_dir().join("builtin").join(plugin_id)
+}
+
+/// Built-in plugins are registered as local plugins rooted at their
+/// materialized directory, so the root identifies them.
+pub(crate) fn is_builtin_plugin(plugin: &crate::api::schema::InstalledPluginInfo) -> bool {
+    let dir = builtin_plugin_dir(&plugin.plugin_id);
+    let root = Path::new(&plugin.plugin_root);
+    root == dir || dir.canonicalize().is_ok_and(|dir| root == dir)
+}
+
 pub(crate) fn managed_checkout_path(plugin_id: &str) -> PathBuf {
     managed_plugins_dir()
         .join("github")
