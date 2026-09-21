@@ -23,7 +23,7 @@ pub(crate) const PANE_GROUP: &str = "pane";
 pub(crate) const AGENT_GROUP: &str = "agent";
 pub(crate) const GIT_GROUP: &str = "git";
 pub(crate) const SYSTEM_GROUP: &str = "system";
-/// Menu holding the TUIs configured in tuis.toml.
+/// Menu holding the TUIs configured as `[[tui]]` entries in config.toml.
 pub(crate) const TUI_GROUP: &str = "open";
 
 /// What a which-key menu entry runs.

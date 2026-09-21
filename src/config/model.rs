@@ -323,10 +323,10 @@ pub struct Config {
     pub advanced: AdvancedConfig,
     pub experimental: ExperimentalConfig,
     pub remote: RemoteConfig,
+    /// `[[tui]]` entries. Validated per entry after deserialization so one
+    /// bad entry does not reject the whole config; see `config::tuis`.
     #[serde(skip)]
     pub(crate) tuis: Vec<super::TuiConfig>,
-    #[serde(skip)]
-    pub(crate) tui_diagnostics: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -485,7 +485,7 @@ pub struct KeysConfig {
     pub git_menu: BindingConfig,
     /// Open the system menu (settings, reload config, sidebar, help, detach). Default: "prefix+s"
     pub system_menu: BindingConfig,
-    /// Open the menu of TUIs configured in tuis.toml. Only shown when at least one TUI is configured. Default: "prefix+o"
+    /// Open the menu of TUIs configured as [[tui]] entries. Only shown when at least one TUI is configured. Default: "prefix+o"
     pub tui_menu: BindingConfig,
     #[serde(skip_serializing)]
     pub(crate) user_fields: BTreeSet<&'static str>,
