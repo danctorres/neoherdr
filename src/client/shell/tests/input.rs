@@ -821,7 +821,7 @@ fn help_overlay_uses_live_keymap_and_owns_filter_state() {
         })
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(text.contains("workspace navigation"));
+    assert!(text.contains("switch workspace"));
     assert!(!text.contains("prefix mode"));
     assert!(filtered
         .cursor
@@ -1017,6 +1017,7 @@ fn plain_text_in_navigate_mode_runs_the_navigate_binding_on_a_report_all_host() 
 
     let _ = state.handle_input_bytes(b"\x1b[98;5u");
     let _ = state.handle_input_bytes(b"\x1b[119u");
+    let _ = state.handle_input_bytes(b"\x1b[115u");
     assert_eq!(state.mode, ClientShellMode::Navigate);
     let jump = state.handle_input_bytes(b"2");
     assert!(

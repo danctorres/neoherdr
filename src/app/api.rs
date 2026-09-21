@@ -1121,6 +1121,8 @@ impl App {
                 return self.handle_agent_view_clear(request.id, params);
             }
             Method::AgentStart(params) => return self.handle_agent_start(request.id, params),
+            Method::AgentKinds(_) => return self.handle_agent_kinds(request.id),
+            Method::AgentOpenTab(params) => return self.handle_agent_open_tab(request.id, params),
             Method::AgentPrompt(_) => {
                 return responses::encode_error(
                     request.id,

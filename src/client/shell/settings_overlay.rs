@@ -42,10 +42,9 @@ pub(super) fn render_settings_overlay(
     let integration_height = 14u16
         .saturating_add(settings.integrations.len().max(1) as u16)
         .saturating_add(settings.integration_messages.len().min(6) as u16);
-    let height = if settings.section == ClientSettingsSection::Integrations {
-        integration_height.max(22)
-    } else {
-        22
+    let height = match settings.section {
+        ClientSettingsSection::Integrations => integration_height.max(22),
+        _ => 22,
     };
     let popup = popup(buffer.area, 76, height)?;
     let inner = panel(buffer, popup, palette.accent, palette.panel_bg)?;
@@ -203,7 +202,10 @@ pub(super) fn render_settings_overlay(
         .integrations
         .iter()
         .any(super::super::settings::integration_needs_install);
-    let show_primary = settings.section != ClientSettingsSection::Integrations || installable;
+    let show_primary = match settings.section {
+        ClientSettingsSection::Integrations => installable,
+        _ => true,
+    };
     let labels = if show_primary { vec![10, 12] } else { vec![12] };
     let buttons = row(inner, &labels, 2, inner.height.saturating_sub(1));
     let (primary, close) = if show_primary {
@@ -211,10 +213,9 @@ pub(super) fn render_settings_overlay(
         button(
             buffer,
             primary,
-            if settings.section == ClientSettingsSection::Integrations {
-                " ↵ install "
-            } else {
-                " ↵ apply "
+            match settings.section {
+                ClientSettingsSection::Integrations => " ↵ install ",
+                _ => " ↵ apply ",
             },
             Style::default()
                 .fg(contrast(palette))

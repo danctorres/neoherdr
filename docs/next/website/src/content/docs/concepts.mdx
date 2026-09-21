@@ -23,11 +23,11 @@ A pane is a real terminal. Herdr renders the terminal output, sends input back t
 
 Panes can be split right or down. They can be renamed manually, read from the CLI, sent input, and closed.
 
-## Mouse UI
+## Keyboard and mouse
 
-Herdr is mouse-native. You can click panes, tabs, workspaces, and agents. You can drag split borders, select text, and use right-click menus. Everything below is also reachable by mouse; keyboard bindings are an optional layer.
+Herdr is keyboard-first: every action is reachable and discoverable through the prefix key and its which-key hint popup, without memorizing the keymap up front. Mouse input stays fully supported as a secondary path — click panes, tabs, workspaces, and agents, drag split borders, select text, and use right-click menus.
 
-If you prefer keyboard-only control, or you want Herdr to stop capturing mouse input, disable mouse capture:
+To stop Herdr from capturing mouse input entirely:
 
 ```toml
 [ui]
@@ -84,6 +84,6 @@ herdr server stop
 
 Herdr has terminal mode, prefix mode, and navigate mode.
 
-Terminal mode sends keys to the focused pane. Prefix mode waits for one Herdr action after the prefix key. Navigate mode is the persistent workspace navigation surface.
+Terminal mode sends keys to the focused pane. Prefix mode waits for one Herdr action, or one menu, after the prefix key. Navigate mode is the persistent workspace navigation surface.
 
-Press the prefix key, default `ctrl+b`, then an action key such as `c` for a new tab or `w` for workspace navigation. See [Keyboard](/docs/keyboard/) if the prefix idea is new to you.
+Press the prefix key, default `ctrl+b`, then an action key such as `z` to zoom or `]` for the next tab. Less frequent actions live in menus named after what they act on: `w` opens the workspace menu, so `prefix+w s` switches workspace and `prefix+t n` creates a tab. See [Keyboard](/docs/keyboard/) for the full layout.

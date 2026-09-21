@@ -7,10 +7,12 @@ fn pending_popup() -> (ClientShellState, Vec<ClientShellAction>) {
         bindings: crate::config::ActionKeybinds::prefix("t"),
         label: "prefix+t".into(),
         command: "popup-command".into(),
+        argv: None,
         action: crate::config::CustomCommandAction::Popup,
         description: None,
         width: None,
         height: None,
+        group: None,
     };
     let mut projection = snapshot();
     projection

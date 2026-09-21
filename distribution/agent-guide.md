@@ -8,7 +8,7 @@ If you are running *inside* a Herdr pane (the environment variable `HERDR_ENV=1`
 
 Herdr is a terminal workspace manager for AI coding agents. Like tmux, it is a multiplexer: a background server owns real terminal processes, and clients attach to render them. Panes keep running when the human detaches, closes the terminal, or disconnects SSH.
 
-Unlike tmux, Herdr is mouse-first and agent-aware. The whole UI is clickable — panes, tabs, workspaces, split borders, right-click menus. Herdr detects coding agents running inside panes and shows each one's state in a sidebar, so the human can see across all their projects which agent is `working`, which is `blocked` waiting for input, and which is `done`. A CLI and a local socket API let scripts and agents drive Herdr programmatically.
+Herdr is keyboard-first and agent-aware: every action is reachable through a discoverable prefix/which-key keymap, with mouse support kept as a secondary input path. Herdr detects coding agents running inside panes and shows each one's state in a sidebar, so the human can see across all their projects which agent is `working`, which is `blocked` waiting for input, and which is `done`. A CLI and a local socket API let scripts and agents drive Herdr programmatically.
 
 ## Concept model
 
@@ -56,17 +56,18 @@ Walk the human through this sequence:
 
 1. `cd` into a project and run `herdr`. It launches or attaches to the default background session and creates a workspace automatically. First run shows an onboarding flow.
 2. Start their coding agent in the pane — `claude`, `codex`, or any supported agent (full list: https://herdr.dev/docs/agents/). Herdr detects it automatically; the sidebar shows its state. Install the matching integration when available. Depending on the agent, it provides lifecycle state, native session restore, or both. For example, `herdr integration install claude` adds native session restore, while Claude's state still comes from screen detection.
-3. Start with the mouse: click panes and tabs to focus, drag split borders, right-click for menus, drag-select to copy. No keybindings are required to use Herdr.
-4. Split panes: right-click menu, or `prefix+v` (right) / `prefix+minus` (down). New tab: `prefix+c`.
+3. Start with the keyboard: press `prefix+?` to discover the available actions, then use the prefix key and which-key hints to navigate. Mouse input remains available for clicking panes and tabs, dragging split borders, opening menus, and selecting text.
+4. Split panes: right-click menu, or `prefix+\` (side by side) / `prefix+-` (stacked). New tab: `prefix+t n` (tab menu, new).
 5. Detach with `prefix+q` (press `ctrl+b`, release, press `q`) or close the terminal window. Everything keeps running. Reattach later with `herdr`.
 6. To actually stop everything: `herdr server stop`.
 
 ## The keyboard story
 
-New users do not need to learn keybindings; the mouse covers everything. When the human wants keyboard control:
+New users do not need to memorize keybindings; the which-key popup makes keyboard control discoverable. Mouse input remains a secondary path:
 
 - The prefix key is `ctrl+b` by default. `prefix+?` shows every active binding live.
-- The guided keyboard page covers the prefix, the bindings to learn first, and a vetted prefix-free setup using `ctrl+alt` chords: https://herdr.dev/docs/keyboard/. Recommend it over improvising.
+- The hot path (pane focus, tabs, splits, zoom) is one key after the prefix; everything else is in noun menus: `prefix+w` workspace, `prefix+t` tab, `prefix+p` pane, `prefix+a` agent, `prefix+g` git, `prefix+s` system, `prefix+o` configured TUIs. Inside a menu, `n` new, `r` rename, `x` close, `s` switch.
+- The guided keyboard page covers the prefix, how the keymap is laid out, and a vetted prefix-free setup using `ctrl+alt` chords: https://herdr.dev/docs/keyboard/. Recommend it over improvising.
 - Every binding, including the prefix itself, is configurable under `[keys]` in the config file.
 - If a direct chord does nothing, the OS or the outer terminal consumed it before Herdr could see it. The keyboard page explains which chords are safe and why.
 
@@ -80,7 +81,7 @@ Once the human is set up, offer to install it for your coding agent so future se
 
 - Config file: `~/.config/herdr/config.toml` on Linux and macOS; `%APPDATA%\herdr\config.toml` on Windows. Herdr works without one.
 - Print the full default config: `herdr --default-config`.
-- Apply edits to a running server: `herdr server reload-config` (or the global menu → reload config).
+- Apply edits to a running server: `herdr server reload-config` (or `prefix+s r`, or the global menu → reload config).
 - Main areas: `[keys]` keybindings, `[theme]` themes, `[ui]` sidebar and UI behavior, `[terminal]` shell defaults, `[update]` channel.
 - Full reference: https://herdr.dev/docs/configuration/
 
@@ -95,6 +96,6 @@ Once the human is set up, offer to install it for your coding agent so future se
 ## Rules for you
 
 - Do not invent keybindings, config keys, or CLI flags. The ones in this file are accurate as of writing; for anything else, read the linked docs page first.
-- Teach mouse before keyboard for humans new to multiplexers.
+- Teach keyboard-first discovery through the prefix and which-key popup; mention mouse input as a secondary path.
 - Herdr is not tmux: do not give tmux commands, tmux config syntax, or `.tmux.conf` advice for Herdr questions.
 - For automation, scripting, or controlling Herdr from code, point to the CLI reference (https://herdr.dev/docs/cli-reference/) and socket API (https://herdr.dev/docs/socket-api/).

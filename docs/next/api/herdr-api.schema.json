@@ -1228,6 +1228,18 @@
     },
     "request": {
       "$defs": {
+        "AgentOpenTabParams": {
+          "description": "Opens a supported agent that is installed on the runtime host in a new tab\nof the active workspace.",
+          "properties": {
+            "kind": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
         "AgentPromptParams": {
           "properties": {
             "target": {
@@ -5404,6 +5416,38 @@
         {
           "properties": {
             "method": {
+              "const": "agent.kinds",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/EmptyParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "agent.open_tab",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/AgentOpenTabParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
               "const": "agent.prompt",
               "type": "string"
             },
@@ -6672,6 +6716,22 @@
             "pane_id",
             "focused",
             "revision"
+          ],
+          "type": "object"
+        },
+        "AgentKindInfo": {
+          "description": "A supported agent whose interactive executable resolves on the runtime\nhost's `PATH`.",
+          "properties": {
+            "executable": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "executable"
           ],
           "type": "object"
         },
@@ -9508,6 +9568,25 @@
               "required": [
                 "type",
                 "agents"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "kinds": {
+                  "items": {
+                    "$ref": "#/schemas/success_response/$defs/AgentKindInfo"
+                  },
+                  "type": "array"
+                },
+                "type": {
+                  "const": "agent_kinds",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "kinds"
               ],
               "type": "object"
             },

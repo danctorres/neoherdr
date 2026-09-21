@@ -88,6 +88,8 @@ operations::define_operations! {
     AgentViewClear(AgentViewClearParams) => "agent.view.clear", true, false;
     AgentFocus(AgentTarget) => "agent.focus", true, false;
     AgentStart(AgentStartParams) => "agent.start", true, false;
+    AgentKinds(EmptyParams) => "agent.kinds", false, true;
+    AgentOpenTab(AgentOpenTabParams) => "agent.open_tab", true, true;
     AgentPrompt(AgentPromptParams) => "agent.prompt", true, false;
     AgentWait(AgentWaitParams) => "agent.wait", false, false;
     PaneSplit(PaneSplitParams) => "pane.split", true, true;
@@ -140,7 +142,7 @@ operations::define_operations! {
     PluginEnable(PluginSetEnabledParams) => "plugin.enable", false, false;
     PluginDisable(PluginSetEnabledParams) => "plugin.disable", true, false;
     PluginActionList(PluginActionListParams) => "plugin.action.list", false, false;
-    PluginActionInvoke(PluginActionInvokeParams) => "plugin.action.invoke", true, false;
+    PluginActionInvoke(PluginActionInvokeParams) => "plugin.action.invoke", true, true;
     PluginLogList(PluginLogListParams) => "plugin.log.list", false, false;
     PluginPaneOpen(PluginPaneOpenParams) => "plugin.pane.open", true, false;
     PluginPaneFocus(PluginPaneFocusParams) => "plugin.pane.focus", true, false;
