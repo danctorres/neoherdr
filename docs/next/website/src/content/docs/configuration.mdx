@@ -200,6 +200,16 @@ manage_ssh_config = true
 
 When enabled, `herdr --remote` writes a private temporary SSH config that includes your user and system SSH configs first, then adds fallback `ServerAliveInterval` and `ServerAliveCountMax` values. Your own keepalive settings win. Linux and macOS clients also use a private per-attach OpenSSH control socket to reuse the first authenticated connection; Windows OpenSSH does not. Set `manage_ssh_config = false` to run remote attach through plain `ssh` without Herdr's generated config or control socket.
 
+## Updates
+
+neoherdr is built from source and has no update source. It never checks herdr.dev for new versions, never shows an update notice, and `herdr update` and `herdr channel set` exit with rebuild instructions instead of installing upstream herdr over the fork:
+
+```bash
+cargo install --locked --git https://github.com/danctorres/neoherdr
+```
+
+`[update] channel` and `version_check` are still accepted so herdr configs keep loading, but they have no effect. `[update] manifest_check` still fetches agent-detection manifest updates from herdr.dev.
+
 ## Keybindings
 
 For a guided introduction to the prefix and a vetted prefix-free setup, see [Keyboard](/docs/keyboard/).

@@ -457,7 +457,7 @@
           "key": "update.channel",
           "type": "enum",
           "default": "\"stable\" (\"preview\" for Windows preview builds)",
-          "description": "Update channel used by background version checks and herdr update. Stable Windows builds default to stable; existing Windows preview installs stay on preview until explicitly switched. Homebrew, mise, and Nix installs ignore the preview channel.",
+          "description": "Accepted for herdr config compatibility; neoherdr has no update source, so this has no effect. herdr channel set exits with rebuild instructions.",
           "values": [
             "stable",
             "preview"
@@ -467,7 +467,7 @@
           "key": "update.version_check",
           "type": "boolean",
           "default": "true",
-          "description": "Check herdr.dev for new Herdr versions in the background."
+          "description": "Accepted for herdr config compatibility; neoherdr has no update source, so no background version check runs and no update notice appears."
         },
         {
           "key": "update.manifest_check",
