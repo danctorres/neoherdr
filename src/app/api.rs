@@ -55,6 +55,10 @@ impl App {
                 self.handle_api_worktree_read_finished(*result);
                 changes_workspace
             }
+            AppEvent::UserShellPathProbed { generation, path } => {
+                self.handle_user_shell_path_probed(generation, path);
+                false
+            }
             ev @ AppEvent::TerminalBell { .. } => {
                 self.handle_internal_event(ev);
                 false
@@ -158,6 +162,11 @@ impl App {
             if let Some(ws_idx) = changed_workspace {
                 self.emit_workspace_updated(ws_idx);
             }
+            return Vec::new();
+        }
+
+        if let AppEvent::UserShellPathProbed { generation, path } = ev {
+            self.handle_user_shell_path_probed(generation, path);
             return Vec::new();
         }
 

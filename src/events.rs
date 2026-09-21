@@ -199,6 +199,11 @@ pub enum AppEvent {
         expected: crate::workspace::WorktreeSpaceMembership,
         valid: bool,
     },
+    /// The user shell's `PATH` probe finished (`None` when it failed).
+    UserShellPathProbed {
+        generation: u64,
+        path: Option<std::ffi::OsString>,
+    },
     /// A configured tab bar status command finished.
     TabBarCommandFinished {
         generation: u64,
