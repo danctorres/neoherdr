@@ -106,7 +106,7 @@ Agent, `prefix+a`:
 | `a` | Jump to the notification target |
 | `j` / `k` | Next / previous agent |
 
-`prefix+a n` lists the supported agents installed on the machine running the session, so over SSH it shows the remote machine's agents. Type to filter, move with `↑`/`↓`, and press `enter` to open the agent in a new tab in the focused pane's directory, or `esc` to cancel. Agents have no keys of their own, so no key changes when you install or remove one. Quitting the agent closes its tab unless you split the tab first. If the agent exits with an error, its tab stays open with the agent's output and a `[herdr] <agent> exited with status N — press Enter to close` line, so you can read what went wrong. The entry is hidden when the server is too old to support it.
+`prefix+a n` lists the supported agents installed on the machine running the session, so over SSH it shows the remote machine's agents. Agents run on that machine through your interactive shell, so an agent installed on a `PATH` added in `.zshrc` (nvm, `~/.local/bin`) is listed, and API keys exported there reach it. Type to filter, move with `↑`/`↓`, and press `enter` to open the agent in a new tab in the focused pane's directory, or `esc` to cancel. Agents have no keys of their own, so no key changes when you install or remove one. Quitting the agent closes its tab unless you split the tab first. If the agent exits with an error, its tab stays open with the agent's output and a `[herdr] <agent> exited with status N — press Enter to close` line, so you can read what went wrong. The entry is hidden when the server is too old to support it.
 
 Git, `prefix+g`:
 
