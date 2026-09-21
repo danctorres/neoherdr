@@ -958,7 +958,7 @@ fn live_handoff_preserves_installed_plugins() {
     link_plugin(&api_socket, &existing_plugin);
     assert_eq!(
         listed_plugin_ids(&api_socket),
-        ["test.live-handoff-existing"]
+        ["test.live-handoff-existing", "worktrunk"]
     );
 
     assert_ok(request(
@@ -970,12 +970,16 @@ fn live_handoff_preserves_installed_plugins() {
 
     assert_eq!(
         listed_plugin_ids(&api_socket),
-        ["test.live-handoff-existing"]
+        ["test.live-handoff-existing", "worktrunk"]
     );
     link_plugin(&api_socket, &added_plugin);
     assert_eq!(
         saved_plugin_ids(&registry_path),
-        ["test.live-handoff-added", "test.live-handoff-existing"]
+        [
+            "test.live-handoff-added",
+            "test.live-handoff-existing",
+            "worktrunk"
+        ]
     );
 
     let _ = request(

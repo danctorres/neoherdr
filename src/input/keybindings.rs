@@ -55,6 +55,7 @@ fn resolve_group_key_exact(
 
 /// `(key label, description)` for every entry of the `group` menu: user
 /// entries first, then built-in entries.
+#[cfg(test)]
 pub(crate) fn group_entries(
     keybinds: &Keybinds,
     group: &str,
