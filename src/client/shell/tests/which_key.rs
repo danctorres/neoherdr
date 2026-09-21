@@ -411,3 +411,120 @@ fn grouped_tab_command_survives_the_endpoint_manifest_and_resolves_in_its_menu()
     };
     assert_eq!(params.command_id, "cmd_git_tab");
 }
+
+fn worktrunk_plugin(enabled: bool) -> crate::api::schema::InstalledPluginInfo {
+    let action = |id: &str| crate::api::schema::PluginManifestAction {
+        id: id.into(),
+        title: id.into(),
+        description: None,
+        contexts: vec![],
+        platforms: None,
+        command: vec!["sh".into()],
+    };
+    crate::api::schema::InstalledPluginInfo {
+        plugin_id: "worktrunk".into(),
+        name: "Worktrunk".into(),
+        version: "0.1.0".into(),
+        min_herdr_version: "0.9.0".into(),
+        description: None,
+        manifest_path: "/tmp/worktrunk/herdr-plugin.toml".into(),
+        plugin_root: "/tmp/worktrunk".into(),
+        enabled,
+        platforms: None,
+        build: vec![],
+        startup: vec![],
+        actions: ["switch", "list", "remove", "merge"]
+            .into_iter()
+            .map(action)
+            .collect(),
+        events: vec![],
+        panes: vec![],
+        link_handlers: vec![],
+        source: Default::default(),
+        warnings: vec![],
+    }
+}
+
+/// Opens the git menu and answers the `plugin.list` request it sends.
+fn open_git_menu_with_plugins(
+    state: &mut ClientShellState,
+    plugins: Vec<crate::api::schema::InstalledPluginInfo>,
+) {
+    assert!(press(state, prefix_key()).actions.is_empty());
+    let input = press(state, plain_key(crossterm::event::KeyCode::Char('g')));
+    let [ClientShellAction::Endpoint { request, .. }] = &input.actions[..] else {
+        panic!("expected a plugin.list request: {:?}", input.actions);
+    };
+    assert!(matches!(
+        request.method,
+        crate::api::schema::Method::PluginList(_)
+    ));
+    let request_id = request.id.clone();
+    state.handle_endpoint_result(
+        "boot-1",
+        &request_id,
+        Ok(crate::api::schema::ResponseResult::PluginList { plugins }),
+    );
+}
+
+fn menu_labels(state: &ClientShellState) -> Vec<String> {
+    state
+        .key_hint
+        .as_ref()
+        .expect("submenu hint")
+        .bindings
+        .iter()
+        .map(|(_, label)| label.to_string())
+        .collect()
+}
+
+#[cfg(not(windows))]
+#[test]
+fn bundled_plugin_menu_entries_follow_the_endpoint_plugin_list() {
+    let mut state = state_with_which_key(true);
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+
+    open_git_menu_with_plugins(&mut state, vec![worktrunk_plugin(true)]);
+    assert!(menu_labels(&state)
+        .iter()
+        .any(|label| label.starts_with("worktrunk")));
+    press(&mut state, plain_key(crossterm::event::KeyCode::Esc));
+    press(&mut state, plain_key(crossterm::event::KeyCode::Esc));
+
+    for plugins in [vec![worktrunk_plugin(false)], vec![]] {
+        open_git_menu_with_plugins(&mut state, plugins);
+        let labels = menu_labels(&state);
+        assert!(
+            !labels.iter().any(|label| label.starts_with("worktrunk")),
+            "{labels:?}"
+        );
+        assert!(labels.iter().any(|label| label == "new worktree"));
+        // A hidden entry's key does nothing instead of invoking the action.
+        let input = press(&mut state, plain_key(crossterm::event::KeyCode::Char('s')));
+        assert!(input.actions.is_empty(), "{:?}", input.actions);
+        assert_eq!(state.mode, ClientShellMode::Terminal);
+    }
+}
+
+#[cfg(not(windows))]
+#[test]
+fn help_panel_hides_unavailable_bundled_plugin_entries() {
+    let mut state = state_with_which_key(true);
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    let help = |state: &ClientShellState| {
+        crate::input::keybind_help_groups(
+            &state.config.keybinds.keybinds,
+            state.config.keybinds.prefix,
+            |action| state.key_group_action_available(action),
+        )
+        .into_iter()
+        .flat_map(|(_, entries)| entries)
+        .any(|(_, label)| label.starts_with("worktrunk"))
+    };
+
+    assert!(!help(&state));
+    open_git_menu_with_plugins(&mut state, vec![worktrunk_plugin(true)]);
+    assert!(help(&state));
+}

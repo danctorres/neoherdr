@@ -201,33 +201,15 @@ fn load_plugin_registry(
     if !persist_plugin_registry {
         return std::collections::HashMap::new();
     }
-    let builtin_roots = match crate::builtin_plugin_assets::materialize() {
-        Ok(roots) => roots,
-        Err(err) => {
-            tracing::warn!(err = %err, "failed to materialize built-in plugins");
-            Vec::new()
-        }
-    };
-    let mut entries = crate::plugin_installations::load(leases).unwrap_or_else(|err| {
+    if let Err(err) = crate::persist::plugin_registry::update_with_declined(|plugins, declined| {
+        crate::builtin_plugin_assets::register_bundled(plugins, declined)
+    }) {
+        tracing::warn!(err = %err, "failed to register built-in plugins");
+    }
+    let entries = crate::plugin_installations::load(leases).unwrap_or_else(|err| {
         tracing::warn!(%err, "failed to load plugin installations");
         Vec::new()
     });
-    for root in builtin_roots {
-        let plugin_id = root
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or_default();
-        if !entries.iter().any(|plugin| plugin.plugin_id == plugin_id) {
-            if let Ok(plugin) =
-                crate::app::api::plugins::load_plugin_manifest(&root.display().to_string(), true)
-            {
-                entries.push(plugin);
-                if let Err(err) = crate::persist::plugin_registry::save(&entries) {
-                    tracing::warn!(err = %err, "failed to register built-in plugins");
-                }
-            }
-        }
-    }
     let entries = crate::persist::plugin_registry::reload_manifests(entries, |path, enabled| {
         crate::app::api::plugins::load_plugin_manifest(path, enabled).map_err(|(_, msg)| msg)
     });

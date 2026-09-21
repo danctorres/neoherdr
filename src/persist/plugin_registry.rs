@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 
@@ -10,6 +11,19 @@ const REGISTRY_LOCK_FILE: &str = ".plugins.lock";
 
 fn registry_path() -> PathBuf {
     crate::config::config_dir().join("plugins.json")
+}
+
+/// Bundled plugins the user removed. Kept beside `plugins.json`, not inside
+/// it: the registry is a bare JSON array shared with upstream herdr, so a new
+/// top-level field would make the file unreadable there.
+fn declined_path() -> PathBuf {
+    crate::config::config_dir().join("plugins-declined.json")
+}
+
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+struct DeclinedPlugins {
+    #[serde(default)]
+    declined: BTreeSet<String>,
 }
 
 fn registry_lock_path() -> PathBuf {
@@ -77,20 +91,49 @@ pub fn save_to_path(path: &Path, plugins: &[InstalledPluginInfo]) -> std::io::Re
     save_json_to_path(path, plugins)
 }
 
-pub fn save(plugins: &[InstalledPluginInfo]) -> std::io::Result<()> {
-    with_registry_lock(|| save_to_path(&registry_path(), plugins))
-}
-
 pub fn update<T>(
     mutation: impl FnOnce(&mut Vec<InstalledPluginInfo>) -> T,
 ) -> std::io::Result<(T, Vec<InstalledPluginInfo>)> {
-    with_registry_lock(|| {
-        let mut plugins = load_from_path_strict(&registry_path())?;
-        let result = mutation(&mut plugins);
-        plugins.sort_by(|left, right| left.plugin_id.cmp(&right.plugin_id));
-        save_to_path(&registry_path(), &plugins)?;
-        Ok((result, plugins))
-    })
+    update_with_declined(|plugins, _| mutation(plugins))
+}
+
+/// Mutates the registry and the set of declined bundled plugin ids under the
+/// registry lock. Strict reads keep a corrupt file from being overwritten, and
+/// each file is written only when the mutation changed it.
+pub fn update_with_declined<T>(
+    mutation: impl FnOnce(&mut Vec<InstalledPluginInfo>, &mut BTreeSet<String>) -> T,
+) -> std::io::Result<(T, Vec<InstalledPluginInfo>)> {
+    with_registry_lock(|| update_with_declined_at(&registry_path(), &declined_path(), mutation))
+}
+
+fn update_with_declined_at<T>(
+    registry: &Path,
+    declined_file: &Path,
+    mutation: impl FnOnce(&mut Vec<InstalledPluginInfo>, &mut BTreeSet<String>) -> T,
+) -> std::io::Result<(T, Vec<InstalledPluginInfo>)> {
+    let before = load_from_path_strict(registry)?;
+    let declined_before = load_declined_strict(declined_file)?;
+    let mut plugins = before.clone();
+    let mut declined = declined_before.clone();
+    let result = mutation(&mut plugins, &mut declined);
+    plugins.sort_by(|left, right| left.plugin_id.cmp(&right.plugin_id));
+    if plugins != before {
+        save_to_path(registry, &plugins)?;
+    }
+    if declined != declined_before {
+        save_json_to_path(declined_file, &DeclinedPlugins { declined })?;
+    }
+    Ok((result, plugins))
+}
+
+fn load_declined_strict(path: &Path) -> std::io::Result<BTreeSet<String>> {
+    if !path.exists() {
+        return Ok(BTreeSet::new());
+    }
+    let content = std::fs::read_to_string(path)?;
+    serde_json::from_str::<DeclinedPlugins>(&content)
+        .map(|file| file.declined)
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))
 }
 
 pub fn try_load() -> std::io::Result<Vec<InstalledPluginInfo>> {
@@ -430,7 +473,8 @@ mod tests {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::os::unix::fs::symlink(&target, &path).unwrap();
 
-        let result = update(|plugins| plugins.push(sample_plugin("example.added")));
+        let result =
+            update_with_declined(|plugins, _| plugins.push(sample_plugin("example.added")));
         match previous_config_home {
             Some(previous) => std::env::set_var("XDG_CONFIG_HOME", previous),
             None => std::env::remove_var("XDG_CONFIG_HOME"),
@@ -471,5 +515,55 @@ mod tests {
         assert!(save_to_path(&path, &[sample_plugin("example.replacement")]).is_err());
         assert_eq!(std::fs::read(&path).unwrap(), original);
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn upstream_registry_without_declined_file_loads_unchanged() {
+        let path = temp_registry_path("upstream-format");
+        let declined = path.with_file_name("plugins-declined.json");
+        let upstream = serde_json::to_string_pretty(&[sample_plugin("example.a")]).unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, &upstream).unwrap();
+
+        let (seen, plugins) =
+            update_with_declined_at(&path, &declined, |_, declined| declined.clone()).unwrap();
+
+        assert!(seen.is_empty());
+        assert_eq!(plugins.len(), 1);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), upstream);
+        assert!(!declined.exists(), "no-op updates must not write files");
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn declining_keeps_the_registry_an_upstream_readable_array() {
+        let path = temp_registry_path("decline");
+        let declined = path.with_file_name("plugins-declined.json");
+        save_to_path(
+            &path,
+            &[sample_plugin("worktrunk"), sample_plugin("example.a")],
+        )
+        .unwrap();
+
+        update_with_declined_at(&path, &declined, |plugins, declined| {
+            plugins.retain(|plugin| plugin.plugin_id != "worktrunk");
+            declined.insert("worktrunk".into());
+        })
+        .unwrap();
+
+        let registry: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(registry.as_array().map(Vec::len), Some(1));
+        assert_eq!(
+            load_declined_strict(&declined).unwrap(),
+            BTreeSet::from(["worktrunk".to_string()])
+        );
+
+        update_with_declined_at(&path, &declined, |_, declined| {
+            declined.remove("worktrunk");
+        })
+        .unwrap();
+        assert!(load_declined_strict(&declined).unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 }
