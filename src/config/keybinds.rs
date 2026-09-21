@@ -10,9 +10,12 @@ use crate::popup_size::PopupSize;
 
 mod menus;
 
+use std::borrow::Cow;
+
 use self::menus::{
-    add_user_group, group_is_defined, parse_group_member_bindings, report_shadowed_menu_openers,
-    resolve_groups, TUI_GROUP,
+    add_group, builtin_group_opener, default_menu_entries, group_is_defined,
+    parse_group_member_bindings, report_shadowed_menu_openers, resolve_groups, MenuEntry,
+    TUI_GROUP,
 };
 pub(crate) use self::menus::{KeyGroup, KeyGroupAction, WORKSPACE_GROUP};
 
@@ -114,6 +117,11 @@ pub struct CommandKeybindConfig {
     /// Menu id opened by a `type = "group"` entry, or joined by any other
     /// entry. Built-in menus: workspace, tab, pane, agent, git, system, open.
     pub group: Option<String>,
+    /// Built-in action run by a menu entry, named like its `keys.<action>`
+    /// field (for example `split_vertical`). Set instead of `command`, and
+    /// only together with `group`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
     /// Exact argv for configured TUIs; never read from or written to config.
     #[serde(skip)]
     pub(crate) argv: Option<Vec<String>>,
@@ -129,6 +137,7 @@ impl Default for CommandKeybindConfig {
             width: None,
             height: None,
             group: None,
+            action: None,
             argv: None,
         }
     }
@@ -644,6 +653,7 @@ impl Config {
             };
         }
 
+        let mut menu_entries = Vec::new();
         for source in [BindingSource::User, BindingSource::Default] {
             apply_navigate!(
                 keybinds.navigate.workspace_up,
@@ -777,21 +787,35 @@ impl Config {
                     &mut keybinds,
                     &mut registry,
                     &mut diagnostics,
+                    &mut menu_entries,
                     "keys.command",
                     &self.keys.command,
+                    source,
                 );
                 append_custom_command_bindings(
                     &mut keybinds,
                     &mut registry,
                     &mut diagnostics,
+                    &mut menu_entries,
                     "tui",
                     &self.tui_command_configs(),
+                    source,
+                );
+            } else {
+                append_custom_command_bindings(
+                    &mut keybinds,
+                    &mut registry,
+                    &mut diagnostics,
+                    &mut menu_entries,
+                    "default menus",
+                    default_menu_entries(),
+                    source,
                 );
             }
         }
 
         report_shadowed_menu_openers(self, &keybinds, &registry, &mut diagnostics);
-        resolve_groups(&mut keybinds);
+        resolve_groups(&mut keybinds, menu_entries);
         (prefix_diag, prefix, diagnostics, keybinds)
     }
 }
@@ -820,13 +844,17 @@ fn reserve_navigate_runtime_keys(registry: &mut BindingRegistry) {
 
 /// Appends `[[keys.command]]`-shaped entries. `field_root` names the config
 /// array in diagnostics. A `group` on a non-opener entry joins that menu: a
-/// built-in menu id, or one opened by a `type = "group"` entry.
+/// built-in menu id, or one opened by a `type = "group"` entry. Menu entries
+/// are collected in `members` for [`resolve_groups`]; the built-in menus are
+/// the same kind of entries with [`BindingSource::Default`].
 fn append_custom_command_bindings(
     keybinds: &mut Keybinds,
     registry: &mut BindingRegistry,
     diagnostics: &mut Vec<String>,
+    members: &mut Vec<MenuEntry>,
     field_root: &str,
     commands: &[CommandKeybindConfig],
+    source: BindingSource,
 ) {
     let user_openers: std::collections::HashSet<&str> = commands
         .iter()
@@ -842,7 +870,42 @@ fn append_custom_command_bindings(
         };
 
         let is_group_opener = command.action_type == CommandKeybindType::Group;
-        if !is_group_opener && command.command.trim().is_empty() {
+        let builtin_action = match command.action.as_deref() {
+            None => None,
+            Some(_)
+                if is_group_opener
+                    || command.action_type != CommandKeybindType::Shell
+                    || !command.command.trim().is_empty() =>
+            {
+                diagnostic(
+                    diagnostics,
+                    format!(
+                        "conflicting custom command: {entry} sets action together with command or type; set exactly one of command, type = \"plugin_action\" with command, or action; disabling binding"
+                    ),
+                );
+                continue;
+            }
+            Some(_) if command.group.is_none() => {
+                diagnostic(
+                    diagnostics,
+                    format!(
+                        "built-in action outside a menu: {entry}.action needs a group; bind keys.<action> for a top-level key; disabling binding"
+                    ),
+                );
+                continue;
+            }
+            Some(name) => match crate::input::KeybindAction::from_config_name(name) {
+                Some(action) => Some(action),
+                None => {
+                    diagnostic(
+                        diagnostics,
+                        format!("unknown action: {entry}.action = {name:?}; disabling binding"),
+                    );
+                    continue;
+                }
+            },
+        };
+        if !is_group_opener && builtin_action.is_none() && command.command.trim().is_empty() {
             diagnostic(
                 diagnostics,
                 format!("empty custom command: {entry}.command; disabling custom command"),
@@ -870,6 +933,13 @@ fn append_custom_command_bindings(
             }
         }
         let bindings = match member_group {
+            // The built-in menus are opened by their `keys.*_menu` fields.
+            None if is_group_opener && source == BindingSource::Default => command
+                .group
+                .as_deref()
+                .and_then(|group| builtin_group_opener(keybinds, group))
+                .cloned()
+                .unwrap_or_default(),
             None => parse_action_bindings(
                 &key_field,
                 &command.key,
@@ -879,16 +949,17 @@ fn append_custom_command_bindings(
             ),
             Some(_) => parse_group_member_bindings(&key_field, &command.key, diagnostics),
         };
-        if bindings.bindings.is_empty() {
+        if bindings.bindings.is_empty() && !(is_group_opener && source == BindingSource::Default) {
             continue;
         }
         if let Some(group) = member_group {
             let taken = bindings.bindings.iter().any(|binding| {
                 let key = normalize_key_combo(binding.trigger.combo());
-                keybinds.custom_commands.iter().any(|existing| {
-                    existing.group.as_deref() == Some(group)
+                members.iter().any(|existing| {
+                    existing.source == source
+                        && existing.group == group
                         && existing
-                            .bindings
+                            .keys
                             .bindings
                             .iter()
                             .any(|other| normalize_key_combo(other.trigger.combo()) == key)
@@ -929,23 +1000,64 @@ fn append_custom_command_bindings(
         };
         if is_group_opener {
             if let Some(group) = command.group.as_deref() {
-                add_user_group(keybinds, group, command.description.as_deref(), bindings);
+                add_group(
+                    keybinds,
+                    group,
+                    command.description.as_deref(),
+                    bindings,
+                    source,
+                );
             }
             continue;
         }
-        let label = bindings.label().unwrap_or_else(|| "unset".to_string());
-        keybinds.custom_commands.push(CustomCommandKeybind {
-            bindings,
-            label,
-            command: command.command.clone(),
-            argv: command.argv.clone(),
-            action,
-            description: command.description.clone(),
-            width,
-            height,
-            group: command.group.clone(),
+        let Some(group) = member_group else {
+            push_custom_command(keybinds, command, bindings, action, width, height);
+            continue;
+        };
+        let (menu_action, default_description) = match builtin_action {
+            Some(builtin) => (KeyGroupAction::Builtin(builtin), builtin.description()),
+            None => (
+                KeyGroupAction::Command(keybinds.custom_commands.len()),
+                "custom command",
+            ),
+        };
+        members.push(MenuEntry {
+            group: group.to_owned(),
+            keys: bindings.clone(),
+            action: menu_action,
+            description: command
+                .description
+                .clone()
+                .map(Cow::Owned)
+                .unwrap_or(Cow::Borrowed(default_description)),
+            source,
         });
+        if builtin_action.is_none() {
+            push_custom_command(keybinds, command, bindings, action, width, height);
+        }
     }
+}
+
+fn push_custom_command(
+    keybinds: &mut Keybinds,
+    command: &CommandKeybindConfig,
+    bindings: ActionKeybinds,
+    action: CustomCommandAction,
+    width: Option<PopupSize>,
+    height: Option<PopupSize>,
+) {
+    let label = bindings.label().unwrap_or_else(|| "unset".to_string());
+    keybinds.custom_commands.push(CustomCommandKeybind {
+        bindings,
+        label,
+        command: command.command.clone(),
+        argv: command.argv.clone(),
+        action,
+        description: command.description.clone(),
+        width,
+        height,
+        group: command.group.clone(),
+    });
 }
 
 impl Config {
@@ -974,6 +1086,7 @@ impl Config {
                     width,
                     height,
                     group: Some(TUI_GROUP.into()),
+                    action: None,
                 }
             })
             .collect()
@@ -1854,6 +1967,7 @@ next_tab = "prefix+n"
             ("close_tab", &keybinds.close_tab),
             ("rename_pane", &keybinds.rename_pane),
             ("edit_scrollback", &keybinds.edit_scrollback),
+            ("clear_pane", &keybinds.clear_pane),
             ("copy_mode", &keybinds.copy_mode),
             ("focus_pane_left", &keybinds.focus_pane_left),
             ("focus_pane_down", &keybinds.focus_pane_down),

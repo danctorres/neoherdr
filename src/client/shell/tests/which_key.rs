@@ -247,6 +247,54 @@ fn entering_prefix_skips_hint_when_disabled() {
 }
 
 #[test]
+fn user_menu_of_builtin_actions_shows_in_which_key_and_dispatches() {
+    let config: Config = toml::from_str(
+        r#"
+[keys]
+show_which_key = true
+
+[[keys.command]]
+key = "prefix+m"
+type = "group"
+group = "win"
+description = "windows"
+
+[[keys.command]]
+key = "v"
+group = "win"
+action = "split_vertical"
+"#,
+    )
+    .unwrap();
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&config));
+    // Local keybindings are rebuilt from the snapshot; built-in action entries
+    // are client keymap and must survive without a matching server command.
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+
+    press(&mut state, prefix_key());
+    assert!(state
+        .key_hint
+        .as_ref()
+        .expect("top-level which-key")
+        .bindings
+        .iter()
+        .any(|(key, label)| key == "m" && label == "+windows"));
+    press(&mut state, plain_key(crossterm::event::KeyCode::Char('m')));
+    let menu = state.key_hint.as_ref().expect("win menu");
+    assert_eq!(
+        menu.bindings,
+        vec![("v".into(), std::borrow::Cow::Borrowed("split side by side"))]
+    );
+    let outcome = press(&mut state, plain_key(crossterm::event::KeyCode::Char('v')));
+    assert!(
+        !outcome.actions.is_empty(),
+        "expected split action, got {:?}",
+        outcome.actions
+    );
+}
+
+#[test]
 fn group_opener_replaces_which_key_with_its_submenu() {
     let mut state = state_with_worktrunk_group();
     press(&mut state, prefix_key());
