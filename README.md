@@ -43,11 +43,13 @@ https://github.com/user-attachments/assets/043ec09f-4bdd-41d5-aee0-8fda6b83e267
 
 ## install
 
+neoherdr has no prebuilt binaries or package-manager releases; the herdr.dev installer, brew, and mise install upstream herdr instead. build it from source (needs rust and zig 0.16.0, see [development](#development)):
+
 ```bash
-curl -fsSL https://herdr.dev/install.sh | sh
+cargo install --locked --git https://github.com/danctorres/neoherdr
 ```
 
-or `brew install herdr` · `mise use -g herdr` · windows: `powershell -ExecutionPolicy Bypass -c "irm https://herdr.dev/install.ps1 | iex"` · [endpoint-protected Windows](https://herdr.dev/docs/windows-beta/) · [binaries](https://github.com/herdrdev/herdr/releases)
+this installs the `herdr` command. `herdr update` does not download anything in this fork; rerun the command above to update. ssh remotes receive the local binary.
 
 then start it where the work lives:
 
@@ -59,7 +61,9 @@ run your agents, split panes, walk away. `ctrl+b q` detaches, `herdr` reattaches
 
 ## docs
 
-everything lives at [herdr.dev/docs](https://herdr.dev/docs/): [quick start](https://herdr.dev/docs/quick-start/) · [concepts](https://herdr.dev/docs/concepts/) · [supported agents](https://herdr.dev/docs/agents/) · [keyboard](https://herdr.dev/docs/keyboard/) · [configuration](https://herdr.dev/docs/configuration/) · [session state](https://herdr.dev/docs/session-state/) · [connecting machines](https://herdr.dev/docs/connecting-machines/) · [remote](https://herdr.dev/docs/persistence-remote/) · [integrations](https://herdr.dev/docs/integrations/) · [plugins](https://herdr.dev/docs/plugins/) · [socket api](https://herdr.dev/docs/socket-api/)
+the keymap and configuration differ from upstream, so read this fork's pages in the repo: [keyboard](docs/next/website/src/content/docs/keyboard.mdx) · [configuration](docs/next/website/src/content/docs/configuration.mdx). inside herdr, `prefix` opens the which-key menu and `prefix ?` shows every binding.
+
+everything else is shared with upstream at [herdr.dev/docs](https://herdr.dev/docs/): [quick start](https://herdr.dev/docs/quick-start/) · [concepts](https://herdr.dev/docs/concepts/) · [supported agents](https://herdr.dev/docs/agents/) · [session state](https://herdr.dev/docs/session-state/) · [connecting machines](https://herdr.dev/docs/connecting-machines/) · [remote](https://herdr.dev/docs/persistence-remote/) · [integrations](https://herdr.dev/docs/integrations/) · [plugins](https://herdr.dev/docs/plugins/) · [socket api](https://herdr.dev/docs/socket-api/)
 
 ## thanks
 
@@ -69,15 +73,15 @@ enterprise / partnership: hey@herdr.dev
 
 ## agent instructions
 
-if you are an ai agent helping with this repository, read [`AGENTS.md`](./AGENTS.md) before making changes and read [`CONTRIBUTING.md`](./CONTRIBUTING.md) before opening issues or PRs.
+if you are an ai agent helping with this repository, read [`CLAUDE.md`](./CLAUDE.md) (fork rules) and [`AGENTS.md`](./AGENTS.md) (upstream rules) before making changes.
 
 ## development
 
 prerequisites: rust 1.96.1 (pinned in `rust-toolchain.toml`, installed automatically by rustup) and zig 0.16.0 on your `PATH` (or pointed to by the `ZIG` env var) — the build shells out to `zig build` for the vendored terminal library, and fails without it. [install zig →](https://ziglang.org/download/)
 
 ```bash
-git clone https://github.com/herdrdev/herdr
-cd herdr
+git clone https://github.com/danctorres/neoherdr
+cd neoherdr
 cargo build --release   # or plain `cargo build` for a faster debug build
 ```
 
