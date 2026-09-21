@@ -1,11 +1,11 @@
 [package]
-name = "herdr"
+name = "neoherdr"
 version = "0.9.3"
 edition = "2021"
 build = "build.rs"
-description = "terminal workspace manager for AI coding agents"
+description = "keyboard-first fork of herdr, a terminal workspace manager for AI coding agents"
 license = "Apache-2.0"
-repository = "https://github.com/herdrdev/herdr"
+repository = "https://github.com/danctorres/neoherdr"
 homepage = "https://herdr.dev"
 keywords = ["terminal", "tui", "ai", "agents", "multiplexer"]
 categories = ["command-line-utilities"]
@@ -19,6 +19,10 @@ include = [
     "LICENSE",
     "Cargo.toml",
 ]
+
+[[bin]]
+name = "herdr"
+path = "src/main.rs"
 
 [workspace]
 members = ["crates/ghostty-vt"]
