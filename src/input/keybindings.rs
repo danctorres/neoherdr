@@ -1,6 +1,6 @@
 use crossterm::event::KeyCode;
 
-use crate::config::{CustomCommandKeybind, Keybinds};
+use crate::config::{CustomCommandKeybind, KeyGroupAction, Keybinds};
 
 use super::TerminalKey;
 
@@ -14,6 +14,76 @@ pub(crate) enum KeybindDispatch {
 pub(crate) enum KeybindMatch {
     Action(KeybindAction),
     Command(CustomCommandKeybind),
+    /// Opens a which-key menu, built-in or user-defined, by id.
+    Group(String),
+    PluginAction(&'static str),
+}
+
+/// Resolves a key pressed while the `group` menu is open. User entries win
+/// over built-in entries on the same key.
+pub(crate) fn resolve_group_key(
+    keybinds: &Keybinds,
+    group: &str,
+    key: &TerminalKey,
+) -> Option<KeybindMatch> {
+    resolve_group_key_exact(keybinds, group, key).or_else(|| {
+        generated_character_key(key)
+            .and_then(|generated_key| resolve_group_key_exact(keybinds, group, &generated_key))
+    })
+}
+
+fn resolve_group_key_exact(
+    keybinds: &Keybinds,
+    group: &str,
+    key: &TerminalKey,
+) -> Option<KeybindMatch> {
+    let member = keybinds
+        .groups
+        .iter()
+        .find(|candidate| candidate.id == group)?
+        .members
+        .iter()
+        .find(|member| member.keys.matches_direct_key(key))?;
+    Some(match member.action {
+        KeyGroupAction::Builtin(action) => KeybindMatch::Action(action),
+        KeyGroupAction::PluginAction(action) => KeybindMatch::PluginAction(action),
+        KeyGroupAction::Command(index) => {
+            KeybindMatch::Command(keybinds.custom_commands.get(index)?.clone())
+        }
+    })
+}
+
+/// `(key label, description)` for every entry of the `group` menu: user
+/// entries first, then built-in entries.
+pub(crate) fn group_entries(
+    keybinds: &Keybinds,
+    group: &str,
+) -> Vec<(String, std::borrow::Cow<'static, str>)> {
+    group_entries_where(keybinds, group, |_| true)
+}
+
+/// [`group_entries`] limited to the members whose action `keep` accepts.
+pub(crate) fn group_entries_where(
+    keybinds: &Keybinds,
+    group: &str,
+    keep: impl Fn(&KeyGroupAction) -> bool,
+) -> Vec<(String, std::borrow::Cow<'static, str>)> {
+    keybinds
+        .groups
+        .iter()
+        .filter(|candidate| candidate.id == group)
+        .flat_map(|group| group.members.iter())
+        .filter(|member| keep(&member.action))
+        .map(|member| (member.label.clone(), member.description.clone()))
+        .collect()
+}
+
+fn resolve_group_opener(keybinds: &Keybinds, key: &TerminalKey) -> Option<String> {
+    keybinds
+        .groups
+        .iter()
+        .find(|group| group.opener.matches_prefix_key(key))
+        .map(|group| group.id.clone())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,6 +102,9 @@ pub(crate) enum KeybindAction {
     NextWorkspace,
     PreviousAgent,
     NextAgent,
+    /// Agent-menu member only: agents are listed in a picker, so there is no
+    /// flat `keys.*` override to configure.
+    NewAgentTab,
     NewTab,
     RenameTab,
     PreviousTab,
@@ -61,6 +134,9 @@ pub(crate) enum KeybindAction {
     ResizePaneUp,
     ResizePaneRight,
     ToggleSidebar,
+    ToggleGroup,
+    ClearPaneName,
+    SwapWithFocusedPane,
     CyclePaneNext,
     CyclePanePrevious,
     LastPane,
@@ -83,11 +159,16 @@ pub(crate) fn resolve_prefix_binding(
     keybinds: &Keybinds,
     key: &TerminalKey,
 ) -> Option<KeybindMatch> {
-    resolve_exact_binding(keybinds, key, KeybindDispatch::Prefix).or_else(|| {
-        generated_character_key(key).and_then(|generated_key| {
-            resolve_exact_binding(keybinds, &generated_key, KeybindDispatch::Prefix)
-        })
+    resolve_prefix_binding_exact(keybinds, key).or_else(|| {
+        generated_character_key(key)
+            .and_then(|generated_key| resolve_prefix_binding_exact(keybinds, &generated_key))
     })
+}
+
+fn resolve_prefix_binding_exact(keybinds: &Keybinds, key: &TerminalKey) -> Option<KeybindMatch> {
+    resolve_group_opener(keybinds, key)
+        .map(KeybindMatch::Group)
+        .or_else(|| resolve_exact_binding(keybinds, key, KeybindDispatch::Prefix))
 }
 
 pub(crate) fn resolve_non_indexed_action(
@@ -95,7 +176,20 @@ pub(crate) fn resolve_non_indexed_action(
     key: &TerminalKey,
     dispatch: KeybindDispatch,
 ) -> Option<KeybindAction> {
-    for (bindings, action) in [
+    flat_action_bindings(keybinds)
+        .into_iter()
+        .find(|(bindings, _)| action_matches(bindings, key, dispatch))
+        .map(|(_, action)| action)
+}
+
+const FLAT_ACTION_COUNT: usize = 52;
+
+/// Every non-indexed action with its own `keys.<action>` binding, in help
+/// order. Shared by key resolution and the help projections.
+pub(crate) fn flat_action_bindings(
+    keybinds: &Keybinds,
+) -> [(&crate::config::ActionKeybinds, KeybindAction); FLAT_ACTION_COUNT] {
+    [
         (&keybinds.help, KeybindAction::Help),
         (&keybinds.settings, KeybindAction::Settings),
         (&keybinds.workspace_picker, KeybindAction::WorkspacePicker),
@@ -147,6 +241,12 @@ pub(crate) fn resolve_non_indexed_action(
         (&keybinds.resize_pane_up, KeybindAction::ResizePaneUp),
         (&keybinds.resize_pane_right, KeybindAction::ResizePaneRight),
         (&keybinds.toggle_sidebar, KeybindAction::ToggleSidebar),
+        (&keybinds.toggle_group, KeybindAction::ToggleGroup),
+        (&keybinds.clear_pane_name, KeybindAction::ClearPaneName),
+        (
+            &keybinds.swap_with_focused_pane,
+            KeybindAction::SwapWithFocusedPane,
+        ),
         (&keybinds.reload_config, KeybindAction::ReloadConfig),
         (
             &keybinds.open_notification_target,
@@ -154,12 +254,79 @@ pub(crate) fn resolve_non_indexed_action(
         ),
         (&keybinds.detach, KeybindAction::Detach),
         (&keybinds.goto, KeybindAction::OpenNavigator),
-    ] {
-        if action_matches(bindings, key, dispatch) {
-            return Some(action);
+    ]
+}
+
+impl KeybindAction {
+    /// `(has a default binding, action)` for every flat action.
+    #[cfg(test)]
+    pub(crate) fn flat_defaults_for_test(keybinds: &Keybinds) -> Vec<(bool, KeybindAction)> {
+        flat_action_bindings(keybinds)
+            .into_iter()
+            .map(|(bindings, action)| (!bindings.bindings.is_empty(), action))
+            .collect()
+    }
+
+    pub(crate) fn description(self) -> &'static str {
+        match self {
+            Self::NewWorkspace => "new workspace",
+            Self::NewWorktree => "new worktree",
+            Self::OpenWorktree => "open worktree",
+            Self::RemoveWorktree => "remove worktree",
+            Self::RenameWorkspace => "rename workspace",
+            Self::CloseWorkspace => "close workspace",
+            Self::SwitchWorkspace(_) => "switch workspace",
+            Self::SwitchTab(_) => "switch tab",
+            Self::FocusAgent(_) => "focus agent",
+            Self::WorkspacePicker => "switch workspace",
+            Self::PreviousWorkspace => "previous workspace",
+            Self::NextWorkspace => "next workspace",
+            Self::PreviousAgent => "previous agent",
+            Self::NextAgent => "next agent",
+            Self::NewAgentTab => "new agent tab",
+            Self::NewTab => "new tab",
+            Self::RenameTab => "rename tab",
+            Self::PreviousTab => "previous tab",
+            Self::NextTab => "next tab",
+            Self::MoveTabPrevious => "move tab left",
+            Self::MoveTabNext => "move tab right",
+            Self::CloseTab => "close tab",
+            Self::RenamePane => "rename pane",
+            Self::FocusPaneLeft => "focus pane left",
+            Self::FocusPaneDown => "focus pane down",
+            Self::FocusPaneUp => "focus pane up",
+            Self::FocusPaneRight => "focus pane right",
+            Self::SwapPaneLeft => "swap pane left",
+            Self::SwapPaneDown => "swap pane down",
+            Self::SwapPaneUp => "swap pane up",
+            Self::SwapPaneRight => "swap pane right",
+            Self::SplitVertical => "split side by side",
+            Self::SplitHorizontal => "split stacked",
+            Self::ClosePane => "close pane",
+            Self::EditScrollback => "edit scrollback",
+            Self::ClearPane => "clear pane",
+            Self::CopyMode => "copy mode",
+            Self::Zoom => "zoom pane",
+            Self::EnterResizeMode => "resize mode",
+            Self::ResizePaneLeft => "resize pane left",
+            Self::ResizePaneDown => "resize pane down",
+            Self::ResizePaneUp => "resize pane up",
+            Self::ResizePaneRight => "resize pane right",
+            Self::ToggleSidebar => "toggle sidebar",
+            Self::ToggleGroup => "expand/collapse group",
+            Self::ClearPaneName => "clear pane name",
+            Self::SwapWithFocusedPane => "swap with focused pane",
+            Self::CyclePaneNext => "cycle pane next",
+            Self::CyclePanePrevious => "cycle pane previous",
+            Self::LastPane => "last pane",
+            Self::Help => "keybinds",
+            Self::Settings => "settings",
+            Self::ReloadConfig => "reload config",
+            Self::OpenNotificationTarget => "jump to notification",
+            Self::Detach => "detach",
+            Self::OpenNavigator => "session navigator",
         }
     }
-    None
 }
 
 pub(crate) fn resolve_custom_command(
@@ -170,10 +337,8 @@ pub(crate) fn resolve_custom_command(
     keybinds
         .custom_commands
         .iter()
-        .find(|binding| match dispatch {
-            KeybindDispatch::Direct => binding.bindings.matches_direct_key(key),
-            KeybindDispatch::Prefix => binding.bindings.matches_prefix_key(key),
-        })
+        .filter(|binding| binding.group.is_none())
+        .find(|binding| action_matches(&binding.bindings, key, dispatch))
         .cloned()
 }
 
@@ -256,9 +421,14 @@ fn action_matches(
 
 #[cfg(test)]
 mod tests {
+    use crate::config::Config;
     use crossterm::event::{KeyCode, KeyModifiers};
 
     use super::*;
+
+    fn key(code: KeyCode) -> TerminalKey {
+        TerminalKey::new(code, KeyModifiers::empty())
+    }
 
     #[test]
     fn clear_pane_is_unbound_by_default_and_configurable() {
@@ -307,15 +477,13 @@ mod tests {
             Some(KeybindMatch::Action(KeybindAction::NextTab))
         ));
 
-        let help = TerminalKey::new(KeyCode::Char('?'), KeyModifiers::empty());
         assert!(matches!(
-            resolve_prefix_binding(&keybinds, &help),
+            resolve_prefix_binding(&keybinds, &key(KeyCode::Char('?'))),
             Some(KeybindMatch::Action(KeybindAction::Help))
         ));
 
-        let one = TerminalKey::new(KeyCode::Char('1'), KeyModifiers::empty());
         assert!(matches!(
-            resolve_prefix_binding(&keybinds, &one),
+            resolve_prefix_binding(&keybinds, &key(KeyCode::Char('1'))),
             Some(KeybindMatch::Action(KeybindAction::SwitchTab(0)))
         ));
     }
@@ -330,5 +498,114 @@ mod tests {
             resolve_prefix_binding(&keybinds, &key),
             Some(KeybindMatch::Action(KeybindAction::Help))
         ));
+    }
+
+    #[test]
+    fn group_keys_use_the_generated_character_fallback() {
+        let keybinds = Keybinds::default();
+        let key = TerminalKey::new(KeyCode::Char('/'), KeyModifiers::SHIFT)
+            .with_generated_text(Some("?".to_owned()));
+
+        assert!(matches!(
+            resolve_group_key(&keybinds, "system", &key),
+            Some(KeybindMatch::Action(KeybindAction::Help))
+        ));
+    }
+
+    #[test]
+    fn default_menu_openers_resolve_to_groups() {
+        let keybinds = Keybinds::default();
+        for (ch, group) in [
+            ('w', "workspace"),
+            ('t', "tab"),
+            ('p', "pane"),
+            ('a', "agent"),
+            ('g', "git"),
+            ('s', "system"),
+        ] {
+            match resolve_prefix_binding(&keybinds, &key(KeyCode::Char(ch))) {
+                Some(KeybindMatch::Group(id)) => assert_eq!(id, group),
+                other => panic!("prefix+{ch}: expected {group} menu, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn menus_share_one_verb_vocabulary() {
+        let keybinds = Keybinds::default();
+        for (group, ch, action) in [
+            ("workspace", 'n', KeybindAction::NewWorkspace),
+            ("tab", 'n', KeybindAction::NewTab),
+            ("git", 'n', KeybindAction::NewWorktree),
+            ("workspace", 'r', KeybindAction::RenameWorkspace),
+            ("tab", 'r', KeybindAction::RenameTab),
+            ("pane", 'r', KeybindAction::RenamePane),
+            ("workspace", 'x', KeybindAction::CloseWorkspace),
+            ("tab", 'x', KeybindAction::CloseTab),
+            ("pane", 'x', KeybindAction::ClosePane),
+            ("git", 'x', KeybindAction::RemoveWorktree),
+        ] {
+            match resolve_group_key(&keybinds, group, &key(KeyCode::Char(ch))) {
+                Some(KeybindMatch::Action(found)) => assert_eq!(found, action, "{group} {ch}"),
+                other => panic!("{group} {ch}: expected {action:?}, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn user_bound_flat_actions_resolve_at_top_level() {
+        let config: Config = toml::from_str("[keys]\nnew_tab = \"prefix+c\"\n").unwrap();
+        assert!(matches!(
+            resolve_prefix_binding(&config.keybinds(), &key(KeyCode::Char('c'))),
+            Some(KeybindMatch::Action(KeybindAction::NewTab))
+        ));
+    }
+
+    #[test]
+    fn user_custom_command_displaces_a_default_menu_opener_with_a_diagnostic() {
+        let config: Config = toml::from_str(
+            r#"
+[[keys.command]]
+key = "prefix+s"
+type = "plugin_action"
+command = "worktrunk.list"
+description = "open lazygit"
+"#,
+        )
+        .unwrap();
+        let keybinds = config.keybinds();
+        match resolve_prefix_binding(&keybinds, &key(KeyCode::Char('s'))) {
+            Some(KeybindMatch::Command(command)) => {
+                assert_eq!(command.command, "worktrunk.list");
+            }
+            other => panic!("expected custom command, got {other:?}"),
+        }
+        assert!(config
+            .collect_diagnostics()
+            .iter()
+            .any(|diag| diag.contains("keys.system_menu")));
+        // The menu still exists and its opener can be moved.
+        assert!(keybinds.groups.iter().any(|group| group.id == "system"));
+    }
+
+    #[test]
+    fn user_entry_joins_and_overrides_a_builtin_menu() {
+        let config: Config = toml::from_str(
+            r#"
+[[keys.command]]
+key = "n"
+group = "tab"
+command = "echo custom"
+description = "custom new tab"
+"#,
+        )
+        .unwrap();
+        let keybinds = config.keybinds();
+        match resolve_group_key(&keybinds, "tab", &key(KeyCode::Char('n'))) {
+            Some(KeybindMatch::Command(command)) => assert_eq!(command.command, "echo custom"),
+            other => panic!("expected user entry, got {other:?}"),
+        }
+        let entries = group_entries(&keybinds, "tab");
+        assert_eq!(entries.iter().filter(|(key, _)| key == "n").count(), 1);
     }
 }

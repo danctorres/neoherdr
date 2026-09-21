@@ -1,0 +1,21 @@
+#!/bin/sh
+# worktrunk action: open the named worktrunk pane (switch, list, remove, merge)
+# for the focused pane's directory. Interaction is left to wt's own CLI.
+set -u
+entrypoint="${1:?usage: open <entrypoint>}"
+herdr_bin="${HERDR_BIN_PATH:-herdr}"
+ctx="${HERDR_PLUGIN_CONTEXT_JSON:-{\}}"
+
+context_string() {
+  printf '%s' "$ctx" | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p"
+}
+
+cwd="$(context_string focused_pane_cwd)"
+if [ -z "$cwd" ]; then
+  cwd="$(context_string workspace_cwd)"
+fi
+if [ -n "$cwd" ]; then
+  exec "$herdr_bin" plugin pane open --plugin worktrunk --entrypoint "$entrypoint" --cwd "$cwd"
+else
+  exec "$herdr_bin" plugin pane open --plugin worktrunk --entrypoint "$entrypoint"
+fi

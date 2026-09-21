@@ -3,8 +3,8 @@ use std::time::Duration;
 use bytes::Bytes;
 
 use crate::api::schema::{
-    AgentPromptParams, AgentRenameParams, AgentSendKeysParams, AgentStartParams, AgentTarget,
-    PaneReadResult, ResponseResult,
+    AgentOpenTabParams, AgentPromptParams, AgentRenameParams, AgentSendKeysParams,
+    AgentStartParams, AgentTarget, PaneReadResult, ResponseResult,
 };
 use crate::app::App;
 
@@ -77,6 +77,32 @@ impl App {
         };
 
         encode_success(id, ResponseResult::AgentStarted { agent, argv })
+    }
+
+    pub(super) fn handle_agent_kinds(&mut self, id: String) -> String {
+        encode_success(
+            id,
+            ResponseResult::AgentKinds {
+                kinds: self.installed_agent_kinds(),
+            },
+        )
+    }
+
+    pub(super) fn handle_agent_open_tab(
+        &mut self,
+        id: String,
+        params: AgentOpenTabParams,
+    ) -> String {
+        let (ws_idx, tab_idx) = match self.open_agent_tab(&params.kind) {
+            Ok(opened) => opened,
+            Err(err) => return encode_error_body(id, self.agent_open_tab_error_body(err)),
+        };
+        self.schedule_session_save();
+        self.emit_tab_created_events(ws_idx, tab_idx);
+        match self.tab_created_result(ws_idx, tab_idx) {
+            Some(result) => encode_success(id, result),
+            None => encode_error(id, "agent_tab_open_failed", "opened agent tab disappeared"),
+        }
     }
 
     pub(crate) fn handle_deferred_agent_api_request(

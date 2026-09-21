@@ -193,10 +193,33 @@ fn load_plugin_registry(
     if !persist_plugin_registry {
         return std::collections::HashMap::new();
     }
-    let entries = crate::plugin_installations::load(leases).unwrap_or_else(|err| {
+    let builtin_roots = match crate::builtin_plugin_assets::materialize() {
+        Ok(roots) => roots,
+        Err(err) => {
+            tracing::warn!(err = %err, "failed to materialize built-in plugins");
+            Vec::new()
+        }
+    };
+    let mut entries = crate::plugin_installations::load(leases).unwrap_or_else(|err| {
         tracing::warn!(%err, "failed to load plugin installations");
         Vec::new()
     });
+    for root in builtin_roots {
+        let plugin_id = root
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
+        if !entries.iter().any(|plugin| plugin.plugin_id == plugin_id) {
+            if let Ok(plugin) =
+                crate::app::api::plugins::load_plugin_manifest(&root.display().to_string(), true)
+            {
+                entries.push(plugin);
+                if let Err(err) = crate::persist::plugin_registry::save(&entries) {
+                    tracing::warn!(err = %err, "failed to register built-in plugins");
+                }
+            }
+        }
+    }
     let entries = crate::persist::plugin_registry::reload_manifests(entries, |path, enabled| {
         crate::app::api::plugins::load_plugin_manifest(path, enabled).map_err(|(_, msg)| msg)
     });
@@ -2950,6 +2973,198 @@ mod tests {
             Some(value) => std::env::set_var("SHELL", value),
             None => std::env::remove_var("SHELL"),
         }
+    }
+
+    /// Puts a fake `pi` agent on `PATH` for the duration of an agent-tab test.
+    #[cfg(unix)]
+    struct FakeAgentPath {
+        dir: std::path::PathBuf,
+        original_path: Option<std::ffi::OsString>,
+        _guard: std::sync::MutexGuard<'static, ()>,
+    }
+
+    #[cfg(unix)]
+    impl FakeAgentPath {
+        fn install(name: &str) -> Self {
+            use std::os::unix::fs::PermissionsExt;
+
+            let guard = config_env_lock()
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let dir = unique_temp_path(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            let agent = dir.join("pi");
+            std::fs::write(&agent, "#!/bin/sh\nsleep 30\n").unwrap();
+            std::fs::set_permissions(&agent, std::fs::Permissions::from_mode(0o755)).unwrap();
+            let original_path = std::env::var_os("PATH");
+            std::env::set_var("PATH", &dir);
+            Self {
+                dir,
+                original_path,
+                _guard: guard,
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for FakeAgentPath {
+        fn drop(&mut self) {
+            match self.original_path.take() {
+                Some(path) => std::env::set_var("PATH", path),
+                None => std::env::remove_var("PATH"),
+            }
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    #[cfg(unix)]
+    fn agent_tab_test_app(name: &str) -> (App, std::path::PathBuf) {
+        let mut app = test_app();
+        app.state.workspaces = vec![Workspace::test_new(name)];
+        app.state.ensure_test_terminals();
+        app.state.active = Some(0);
+        app.state.selected = 0;
+        let project = unique_temp_path(&format!("{name}-project"));
+        std::fs::create_dir_all(&project).unwrap();
+        let root = app.state.workspaces[0].tabs[0].root_pane;
+        let terminal_id = app.state.workspaces[0].tabs[0].panes[&root]
+            .attached_terminal_id
+            .clone();
+        app.state.terminals.get_mut(&terminal_id).unwrap().cwd = project.clone();
+        (app, project)
+    }
+
+    fn open_agent_tab_request(kind: &str) -> crate::api::schema::Request {
+        crate::api::schema::Request {
+            id: "req_agent_open_tab".into(),
+            method: crate::api::schema::Method::AgentOpenTab(
+                crate::api::schema::AgentOpenTabParams { kind: kind.into() },
+            ),
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn agent_kinds_lists_only_agents_found_on_path() {
+        let _path = FakeAgentPath::install("agent-kinds");
+        let mut app = test_app();
+
+        let response = app.handle_api_request(crate::api::schema::Request {
+            id: "req_agent_kinds".into(),
+            method: crate::api::schema::Method::AgentKinds(Default::default()),
+        });
+        let response: serde_json::Value = serde_json::from_str(&response).unwrap();
+
+        assert_eq!(
+            response["result"],
+            serde_json::json!({
+                "type": "agent_kinds",
+                "kinds": [{ "kind": "pi", "executable": "pi" }],
+            })
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn agent_open_tab_runs_the_agent_in_a_focused_named_tab() {
+        let _path = FakeAgentPath::install("agent-open-tab");
+        let (mut app, project) = agent_tab_test_app("agent-open-tab");
+
+        let response = app.handle_api_request(open_agent_tab_request("pi"));
+        let response: serde_json::Value = serde_json::from_str(&response).unwrap();
+
+        assert_eq!(response["result"]["type"], "tab_created", "{response}");
+        let workspace = &app.state.workspaces[0];
+        assert_eq!(workspace.tabs.len(), 2);
+        assert_eq!(workspace.active_tab_index(), 1);
+        let tab = &workspace.tabs[1];
+        assert_eq!(tab.custom_name.as_deref(), Some("pi"));
+        assert_eq!(
+            response["result"]["tab"]["tab_id"],
+            app.public_tab_id(0, 1).unwrap()
+        );
+        let terminal = &app.state.terminals[&tab.panes[&tab.root_pane].attached_terminal_id];
+        assert_eq!(
+            terminal.launch_argv.as_deref(),
+            Some(&["pi".to_string()][..])
+        );
+        assert_eq!(terminal.cwd, project);
+        assert_eq!(app.state.mode, Mode::Terminal);
+
+        crate::app::api::test_support::shutdown_test_runtimes(&mut app);
+        let _ = std::fs::remove_dir_all(project);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn agent_tab_closes_when_the_agent_exits_as_its_last_pane() {
+        let _path = FakeAgentPath::install("agent-tab-exit");
+        let (mut app, project) = agent_tab_test_app("agent-tab-exit");
+        app.handle_api_request(open_agent_tab_request("pi"));
+        let agent_pane = app.state.workspaces[0].tabs[1].root_pane;
+
+        app.handle_internal_event(AppEvent::PaneDied {
+            pane_id: agent_pane,
+            exit_reason: crate::platform::ChildExitReason::Exited,
+        });
+
+        assert_eq!(app.state.workspaces[0].tabs.len(), 1);
+        assert_eq!(app.state.workspaces[0].active_tab_index(), 0);
+
+        crate::app::api::test_support::shutdown_test_runtimes(&mut app);
+        let _ = std::fs::remove_dir_all(project);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn split_agent_tab_survives_the_agent_exiting() {
+        let _path = FakeAgentPath::install("agent-tab-split-exit");
+        let (mut app, project) = agent_tab_test_app("agent-tab-split-exit");
+        app.handle_api_request(open_agent_tab_request("pi"));
+        let agent_pane = app.state.workspaces[0].tabs[1].root_pane;
+        let other_pane = app.state.workspaces[0].test_split(ratatui::layout::Direction::Horizontal);
+        app.state.ensure_test_terminals();
+
+        app.handle_internal_event(AppEvent::PaneDied {
+            pane_id: agent_pane,
+            exit_reason: crate::platform::ChildExitReason::Exited,
+        });
+
+        let workspace = &app.state.workspaces[0];
+        assert_eq!(workspace.tabs.len(), 2);
+        assert_eq!(workspace.active_tab_index(), 1);
+        assert_eq!(workspace.tabs[1].layout.pane_ids(), [other_pane]);
+        assert_eq!(workspace.focused_pane_id(), Some(other_pane));
+
+        crate::app::api::test_support::shutdown_test_runtimes(&mut app);
+        let _ = std::fs::remove_dir_all(project);
+    }
+
+    #[tokio::test]
+    async fn agent_open_tab_rejects_unknown_and_uninstalled_kinds_without_a_tab() {
+        let mut app = test_app();
+        app.state.workspaces = vec![Workspace::test_new("agent-open-tab-reject")];
+        app.state.ensure_test_terminals();
+        app.state.active = Some(0);
+        app.state.selected = 0;
+        let _guard = config_env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let original_path = std::env::var_os("PATH");
+        std::env::set_var("PATH", unique_temp_path("agent-open-tab-empty-path"));
+
+        let unknown = app.handle_api_request(open_agent_tab_request("not-an-agent"));
+        let uninstalled = app.handle_api_request(open_agent_tab_request("pi"));
+
+        match original_path {
+            Some(path) => std::env::set_var("PATH", path),
+            None => std::env::remove_var("PATH"),
+        }
+        let unknown: serde_json::Value = serde_json::from_str(&unknown).unwrap();
+        let uninstalled: serde_json::Value = serde_json::from_str(&uninstalled).unwrap();
+        assert_eq!(unknown["error"]["code"], "unsupported_agent_kind");
+        assert_eq!(uninstalled["error"]["code"], "agent_not_installed");
+        assert_eq!(app.state.workspaces[0].tabs.len(), 1);
     }
 
     #[tokio::test]
