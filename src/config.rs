@@ -40,7 +40,7 @@ pub use self::{
 };
 
 pub(crate) use self::keybinds::{parse_key_combo, KeyGroupAction, WORKSPACE_GROUP};
-pub(crate) use self::tuis::{load_tuis, TuiConfig, TuiKind};
+pub(crate) use self::tuis::{TuiConfig, TuiKind};
 pub(crate) use self::write::{update_file_at, write_edit, ConfigEdit};
 pub(crate) use self::{
     io::upsert_top_level_bool,

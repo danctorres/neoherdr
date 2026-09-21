@@ -445,6 +445,18 @@ pane_history = false
 # Maximum scrollback buffer size in bytes retained per pane terminal.
 # Matches Ghostty's default scrollback-limit behavior.
 # scrollback_limit_bytes = 10000000
+
+# System TUIs for the open menu (prefix+o). Each key is local to that menu.
+# command is an argv list resolved from PATH, not run through a shell.
+# type = "popup" (default) or "tab"; width/height apply to popups.
+# [[tui]]
+# id = "lazygit"
+# key = "g"
+# title = "lazygit"
+# description = "git UI for the focused pane's repo"
+# command = ["lazygit"]
+# width = "95%"
+# height = "95%"
 "##;
 
 // Bundled at build time so the printed skill always matches this binary's release.
