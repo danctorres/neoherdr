@@ -178,162 +178,116 @@ pub(crate) fn resolve_non_indexed_action(
     dispatch: KeybindDispatch,
 ) -> Option<KeybindAction> {
     flat_action_bindings(keybinds)
-        .into_iter()
         .find(|(bindings, _)| action_matches(bindings, key, dispatch))
         .map(|(_, action)| action)
 }
 
-const FLAT_ACTION_COUNT: usize = 52;
+/// A built-in action with its own `keys.<name>` binding field.
+struct FlatAction {
+    /// The `keys.<name>` field, also the name a `[[keys.command]]` menu entry
+    /// uses in `action = "<name>"`.
+    name: &'static str,
+    action: KeybindAction,
+    bindings: fn(&Keybinds) -> &crate::config::ActionKeybinds,
+}
+
+macro_rules! flat {
+    ($field:ident, $action:ident) => {
+        FlatAction {
+            name: stringify!($field),
+            action: KeybindAction::$action,
+            bindings: |keybinds| &keybinds.$field,
+        }
+    };
+}
+
+/// Every non-indexed action with its own `keys.<action>` binding, in help
+/// order.
+const FLAT_ACTIONS: &[FlatAction] = &[
+    flat!(help, Help),
+    flat!(settings, Settings),
+    flat!(workspace_picker, WorkspacePicker),
+    flat!(new_workspace, NewWorkspace),
+    flat!(new_worktree, NewWorktree),
+    flat!(open_worktree, OpenWorktree),
+    flat!(remove_worktree, RemoveWorktree),
+    flat!(rename_workspace, RenameWorkspace),
+    flat!(close_workspace, CloseWorkspace),
+    flat!(previous_workspace, PreviousWorkspace),
+    flat!(next_workspace, NextWorkspace),
+    flat!(previous_agent, PreviousAgent),
+    flat!(next_agent, NextAgent),
+    flat!(new_tab, NewTab),
+    flat!(rename_tab, RenameTab),
+    flat!(previous_tab, PreviousTab),
+    flat!(next_tab, NextTab),
+    flat!(move_tab_previous, MoveTabPrevious),
+    flat!(move_tab_next, MoveTabNext),
+    flat!(close_tab, CloseTab),
+    flat!(rename_pane, RenamePane),
+    flat!(edit_scrollback, EditScrollback),
+    flat!(clear_pane, ClearPane),
+    flat!(copy_mode, CopyMode),
+    flat!(focus_pane_left, FocusPaneLeft),
+    flat!(focus_pane_down, FocusPaneDown),
+    flat!(focus_pane_up, FocusPaneUp),
+    flat!(focus_pane_right, FocusPaneRight),
+    flat!(swap_pane_left, SwapPaneLeft),
+    flat!(swap_pane_down, SwapPaneDown),
+    flat!(swap_pane_up, SwapPaneUp),
+    flat!(swap_pane_right, SwapPaneRight),
+    flat!(last_pane, LastPane),
+    flat!(cycle_pane_next, CyclePaneNext),
+    flat!(cycle_pane_previous, CyclePanePrevious),
+    flat!(split_vertical, SplitVertical),
+    flat!(split_horizontal, SplitHorizontal),
+    flat!(close_pane, ClosePane),
+    flat!(zoom, Zoom),
+    flat!(resize_mode, EnterResizeMode),
+    flat!(resize_pane_left, ResizePaneLeft),
+    flat!(resize_pane_down, ResizePaneDown),
+    flat!(resize_pane_up, ResizePaneUp),
+    flat!(resize_pane_right, ResizePaneRight),
+    flat!(toggle_sidebar, ToggleSidebar),
+    flat!(toggle_group, ToggleGroup),
+    flat!(clear_pane_name, ClearPaneName),
+    flat!(swap_with_focused_pane, SwapWithFocusedPane),
+    flat!(reload_config, ReloadConfig),
+    flat!(open_notification_target, OpenNotificationTarget),
+    flat!(detach, Detach),
+    flat!(goto, OpenNavigator),
+];
+
+/// Actions that exist only as menu entries: agents are listed in a picker,
+/// so there is no flat `keys.*` field to configure.
+const MENU_ONLY_ACTIONS: &[(&str, KeybindAction)] =
+    &[("new_agent_tab", KeybindAction::NewAgentTab)];
 
 /// Every non-indexed action with its own `keys.<action>` binding, in help
 /// order. Shared by key resolution and the help projections.
 pub(crate) fn flat_action_bindings(
     keybinds: &Keybinds,
-) -> [(&crate::config::ActionKeybinds, KeybindAction); FLAT_ACTION_COUNT] {
-    [
-        (&keybinds.help, KeybindAction::Help),
-        (&keybinds.settings, KeybindAction::Settings),
-        (&keybinds.workspace_picker, KeybindAction::WorkspacePicker),
-        (&keybinds.new_workspace, KeybindAction::NewWorkspace),
-        (&keybinds.new_worktree, KeybindAction::NewWorktree),
-        (&keybinds.open_worktree, KeybindAction::OpenWorktree),
-        (&keybinds.remove_worktree, KeybindAction::RemoveWorktree),
-        (&keybinds.rename_workspace, KeybindAction::RenameWorkspace),
-        (&keybinds.close_workspace, KeybindAction::CloseWorkspace),
-        (
-            &keybinds.previous_workspace,
-            KeybindAction::PreviousWorkspace,
-        ),
-        (&keybinds.next_workspace, KeybindAction::NextWorkspace),
-        (&keybinds.previous_agent, KeybindAction::PreviousAgent),
-        (&keybinds.next_agent, KeybindAction::NextAgent),
-        (&keybinds.new_tab, KeybindAction::NewTab),
-        (&keybinds.rename_tab, KeybindAction::RenameTab),
-        (&keybinds.previous_tab, KeybindAction::PreviousTab),
-        (&keybinds.next_tab, KeybindAction::NextTab),
-        (&keybinds.move_tab_previous, KeybindAction::MoveTabPrevious),
-        (&keybinds.move_tab_next, KeybindAction::MoveTabNext),
-        (&keybinds.close_tab, KeybindAction::CloseTab),
-        (&keybinds.rename_pane, KeybindAction::RenamePane),
-        (&keybinds.edit_scrollback, KeybindAction::EditScrollback),
-        (&keybinds.clear_pane, KeybindAction::ClearPane),
-        (&keybinds.copy_mode, KeybindAction::CopyMode),
-        (&keybinds.focus_pane_left, KeybindAction::FocusPaneLeft),
-        (&keybinds.focus_pane_down, KeybindAction::FocusPaneDown),
-        (&keybinds.focus_pane_up, KeybindAction::FocusPaneUp),
-        (&keybinds.focus_pane_right, KeybindAction::FocusPaneRight),
-        (&keybinds.swap_pane_left, KeybindAction::SwapPaneLeft),
-        (&keybinds.swap_pane_down, KeybindAction::SwapPaneDown),
-        (&keybinds.swap_pane_up, KeybindAction::SwapPaneUp),
-        (&keybinds.swap_pane_right, KeybindAction::SwapPaneRight),
-        (&keybinds.last_pane, KeybindAction::LastPane),
-        (&keybinds.cycle_pane_next, KeybindAction::CyclePaneNext),
-        (
-            &keybinds.cycle_pane_previous,
-            KeybindAction::CyclePanePrevious,
-        ),
-        (&keybinds.split_vertical, KeybindAction::SplitVertical),
-        (&keybinds.split_horizontal, KeybindAction::SplitHorizontal),
-        (&keybinds.close_pane, KeybindAction::ClosePane),
-        (&keybinds.zoom, KeybindAction::Zoom),
-        (&keybinds.resize_mode, KeybindAction::EnterResizeMode),
-        (&keybinds.resize_pane_left, KeybindAction::ResizePaneLeft),
-        (&keybinds.resize_pane_down, KeybindAction::ResizePaneDown),
-        (&keybinds.resize_pane_up, KeybindAction::ResizePaneUp),
-        (&keybinds.resize_pane_right, KeybindAction::ResizePaneRight),
-        (&keybinds.toggle_sidebar, KeybindAction::ToggleSidebar),
-        (&keybinds.toggle_group, KeybindAction::ToggleGroup),
-        (&keybinds.clear_pane_name, KeybindAction::ClearPaneName),
-        (
-            &keybinds.swap_with_focused_pane,
-            KeybindAction::SwapWithFocusedPane,
-        ),
-        (&keybinds.reload_config, KeybindAction::ReloadConfig),
-        (
-            &keybinds.open_notification_target,
-            KeybindAction::OpenNotificationTarget,
-        ),
-        (&keybinds.detach, KeybindAction::Detach),
-        (&keybinds.goto, KeybindAction::OpenNavigator),
-    ]
+) -> impl Iterator<Item = (&crate::config::ActionKeybinds, KeybindAction)> + '_ {
+    FLAT_ACTIONS
+        .iter()
+        .map(move |flat| ((flat.bindings)(keybinds), flat.action))
 }
-
-/// The name a `[[keys.command]] action = "…"` menu entry uses for each
-/// built-in action it can run: the matching `keys.<action>` field name.
-/// `new_agent_tab` has no `keys.*` field; it is a menu-only action.
-const ACTION_NAMES: &[(&str, KeybindAction)] = &[
-    ("help", KeybindAction::Help),
-    ("settings", KeybindAction::Settings),
-    ("workspace_picker", KeybindAction::WorkspacePicker),
-    ("new_workspace", KeybindAction::NewWorkspace),
-    ("new_worktree", KeybindAction::NewWorktree),
-    ("open_worktree", KeybindAction::OpenWorktree),
-    ("remove_worktree", KeybindAction::RemoveWorktree),
-    ("rename_workspace", KeybindAction::RenameWorkspace),
-    ("close_workspace", KeybindAction::CloseWorkspace),
-    ("previous_workspace", KeybindAction::PreviousWorkspace),
-    ("next_workspace", KeybindAction::NextWorkspace),
-    ("previous_agent", KeybindAction::PreviousAgent),
-    ("next_agent", KeybindAction::NextAgent),
-    ("new_agent_tab", KeybindAction::NewAgentTab),
-    ("new_tab", KeybindAction::NewTab),
-    ("rename_tab", KeybindAction::RenameTab),
-    ("previous_tab", KeybindAction::PreviousTab),
-    ("next_tab", KeybindAction::NextTab),
-    ("move_tab_previous", KeybindAction::MoveTabPrevious),
-    ("move_tab_next", KeybindAction::MoveTabNext),
-    ("close_tab", KeybindAction::CloseTab),
-    ("rename_pane", KeybindAction::RenamePane),
-    ("edit_scrollback", KeybindAction::EditScrollback),
-    ("clear_pane", KeybindAction::ClearPane),
-    ("copy_mode", KeybindAction::CopyMode),
-    ("focus_pane_left", KeybindAction::FocusPaneLeft),
-    ("focus_pane_down", KeybindAction::FocusPaneDown),
-    ("focus_pane_up", KeybindAction::FocusPaneUp),
-    ("focus_pane_right", KeybindAction::FocusPaneRight),
-    ("swap_pane_left", KeybindAction::SwapPaneLeft),
-    ("swap_pane_down", KeybindAction::SwapPaneDown),
-    ("swap_pane_up", KeybindAction::SwapPaneUp),
-    ("swap_pane_right", KeybindAction::SwapPaneRight),
-    ("last_pane", KeybindAction::LastPane),
-    ("cycle_pane_next", KeybindAction::CyclePaneNext),
-    ("cycle_pane_previous", KeybindAction::CyclePanePrevious),
-    ("split_vertical", KeybindAction::SplitVertical),
-    ("split_horizontal", KeybindAction::SplitHorizontal),
-    ("close_pane", KeybindAction::ClosePane),
-    ("zoom", KeybindAction::Zoom),
-    ("resize_mode", KeybindAction::EnterResizeMode),
-    ("resize_pane_left", KeybindAction::ResizePaneLeft),
-    ("resize_pane_down", KeybindAction::ResizePaneDown),
-    ("resize_pane_up", KeybindAction::ResizePaneUp),
-    ("resize_pane_right", KeybindAction::ResizePaneRight),
-    ("toggle_sidebar", KeybindAction::ToggleSidebar),
-    ("toggle_group", KeybindAction::ToggleGroup),
-    ("clear_pane_name", KeybindAction::ClearPaneName),
-    ("swap_with_focused_pane", KeybindAction::SwapWithFocusedPane),
-    ("reload_config", KeybindAction::ReloadConfig),
-    (
-        "open_notification_target",
-        KeybindAction::OpenNotificationTarget,
-    ),
-    ("detach", KeybindAction::Detach),
-    ("goto", KeybindAction::OpenNavigator),
-];
 
 impl KeybindAction {
     /// The built-in action a menu entry names with `action = "<name>"`.
     pub(crate) fn from_config_name(name: &str) -> Option<Self> {
-        ACTION_NAMES
+        FLAT_ACTIONS
             .iter()
+            .map(|flat| (flat.name, flat.action))
+            .chain(MENU_ONLY_ACTIONS.iter().copied())
             .find(|(candidate, _)| *candidate == name)
-            .map(|&(_, action)| action)
+            .map(|(_, action)| action)
     }
 
     /// `(has a default binding, action)` for every flat action.
     #[cfg(test)]
     pub(crate) fn flat_defaults_for_test(keybinds: &Keybinds) -> Vec<(bool, KeybindAction)> {
         flat_action_bindings(keybinds)
-            .into_iter()
             .map(|(bindings, action)| (!bindings.bindings.is_empty(), action))
             .collect()
     }
@@ -533,6 +487,23 @@ mod tests {
             ),
             Some(KeybindMatch::Action(KeybindAction::SwapPaneUp))
         ));
+    }
+
+    #[test]
+    fn flat_action_names_are_unique_keys_fields() {
+        let keys = toml::Value::try_from(&Config::default().keys).unwrap();
+        let mut seen = std::collections::HashSet::new();
+        for flat in FLAT_ACTIONS {
+            assert!(seen.insert(flat.name), "duplicate {}", flat.name);
+            assert!(keys.get(flat.name).is_some(), "keys.{} missing", flat.name);
+            assert_eq!(
+                KeybindAction::from_config_name(flat.name),
+                Some(flat.action)
+            );
+        }
+        for (name, _) in MENU_ONLY_ACTIONS {
+            assert!(seen.insert(name) && keys.get(name).is_none(), "{name}");
+        }
     }
 
     #[test]
