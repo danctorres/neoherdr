@@ -52,27 +52,65 @@ Reload applies most UI settings without restarting panes. Startup-only settings 
 
 ## System TUIs
 
-Declare system-installed terminal applications in `tuis.toml`, which lives next
-to `config.toml` and follows the same path resolution (including
-`HERDR_CONFIG_PATH`). Herdr does not install or bundle these programs:
-
-```text
-Linux and macOS: ~/.config/herdr/tuis.toml
-Windows:          %APPDATA%\herdr\tuis.toml
-```
+Declare system-installed terminal applications as `[[tui]]` entries in
+`config.toml`. Herdr does not install or bundle these programs.
 
 Each entry supplies a menu-local key, display metadata, and argv command. The
 configured TUIs form the `open` menu, which opens with `prefix+o` by default
 and is shown only when at least one TUI is configured; change `keys.tui_menu`
-in `config.toml` to choose another opener:
+to choose another opener.
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `id` | yes | Stable identifier: letters, digits, `.`, `_`, `-`. Unique across entries. |
+| `key` | yes | One key, local to the `open` menu (no `prefix+` or modifiers). |
+| `title` | yes | Label shown in which-key and help. |
+| `description` | no | Longer text shown in help. |
+| `command` | yes | Argv list, for example `["gh", "dash"]`. Not run through a shell. |
+| `type` | no | `"popup"` (default) or `"tab"`. |
+| `width`, `height` | no | Popup size in cells or percent, for example `"90%"`. |
+| `platforms` | no | Limit the entry to `"linux"`, `"macos"`, or `"windows"`. |
+
+The menu and each member appear in which-key and help. Members use only their
+local key inside the menu, never a top-level prefix binding. A popup entry
+uses the focused pane's working directory when available. Executable names are
+resolved from the system `PATH`. If a command is absent, its popup shows a
+short message and waits for Enter, so entries for tools you have not installed
+are harmless. Invalid entries are reported independently, with their field
+path such as `tui[0].key`, so valid entries remain usable.
+
+Reload the running server after editing with `herdr server reload-config`.
+
+### Example recipe
+
+Paste this block into `config.toml` for four common TUIs. Each key is the
+tool's own mnemonic: `g`it, `d`ash, `f`iles, `b`top.
 
 ```toml
 [[tui]]
 id = "lazygit"
 key = "g"
 title = "lazygit"
-description = "Open lazygit for the focused pane"
+description = "git UI for the focused pane's repo"
 command = ["lazygit"]
+width = "95%"
+height = "95%"
+
+[[tui]]
+id = "gh-dash"
+key = "d"
+title = "gh-dash"
+description = "GitHub PRs and issues (gh extension install dlvhdr/gh-dash)"
+command = ["gh", "dash"]
+width = "95%"
+height = "95%"
+
+[[tui]]
+id = "yazi"
+key = "f"
+title = "yazi"
+description = "file manager in the focused pane's directory"
+command = ["yazi"]
 width = "90%"
 height = "90%"
 
@@ -80,23 +118,16 @@ height = "90%"
 id = "btop"
 key = "b"
 title = "btop"
+description = "system monitor"
 command = ["btop"]
 ```
 
-Save this as `tuis.toml` beside your `config.toml`. The executable names are
-resolved from the system `PATH`, so install each TUI separately before using
-its binding.
+Install hints:
 
-The menu and each member appear in which-key and help. Members use only their
-local key inside the menu, never a top-level prefix binding. Each
-action opens as a popup and uses the
-focused pane's working directory when available. Arguments are passed directly
-to the system executable, not through a shell. If a command is absent from
-`PATH`, its popup shows a short message and waits for Enter. Invalid entries
-are reported independently so valid entries remain usable.
-
-Reload the running server after editing this file with
-`herdr server reload-config`.
+- lazygit: `brew install lazygit`, or your distribution's `lazygit` package.
+- gh-dash: install the GitHub CLI (`gh`), then `gh extension install dlvhdr/gh-dash`.
+- yazi: `brew install yazi`, or `cargo install --locked yazi-fm yazi-cli`.
+- btop: `brew install btop`, or your distribution's `btop` package.
 
 Themes, sidebar layouts, copy behavior, and other presentation settings come from the client's local config, including when viewing an SSH machine. Pane defaults, worktrees, integrations, and custom commands belong to the server where the panes run. The UI's `reload config` action reloads both the client's local settings and the selected server's config. Local keybindings reload too; `--remote-keybindings server` instead uses the selected server's keybindings.
 

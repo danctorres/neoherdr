@@ -127,7 +127,7 @@ System, `prefix+s`:
 | `?` | Keybind help |
 | `q` | Detach |
 
-Open, `prefix+o`: the TUIs you configure in [`tuis.toml`](/docs/configuration/#system-tuis), each on its own key. The menu appears only when at least one TUI is configured.
+Open, `prefix+o`: the TUIs you configure as [`[[tui]]` entries](/docs/configuration/#system-tuis), each on its own key. The menu appears only when at least one TUI is configured.
 
 Menu openers are config fields (`workspace_menu`, `tab_menu`, `pane_menu`, `agent_menu`, `git_menu`, `system_menu`, `tui_menu`), so you can move them. Keys inside menus are fixed, but you can add your own entries to any menu, or replace a built-in entry on the same key; see [Adding commands to menus](/docs/configuration/#adding-commands-to-menus). Every menu action is also a normal keybinding field that is unset by default, so `new_tab = "prefix+c"` gives you a tmux-style top-level key without losing `prefix+t n`. The full keymap and the binding syntax live in the [keybinding reference](/docs/configuration/#keybindings).
 

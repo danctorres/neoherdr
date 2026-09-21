@@ -14,6 +14,7 @@ const KNOWN_TOP_LEVEL_CONFIG_KEYS: &[&str] = &[
     "session",
     "terminal",
     "theme",
+    "tui",
     "ui",
     "update",
     "worktrees",
@@ -133,49 +134,61 @@ impl Config {
         let content = match read_optional_config(&path) {
             Ok(Some(content)) => content,
             Ok(None) => {
-                return with_tuis(LoadedConfig {
+                return LoadedConfig {
                     config: Self::default(),
                     diagnostics: Vec::new(),
                     invalid_sections: Vec::new(),
-                });
+                };
             }
             Err(err) => {
                 warn!(err = %err, "config read error, using defaults");
-                return with_tuis(LoadedConfig {
+                return LoadedConfig {
                     config: Self::default(),
                     diagnostics: vec![format!("config read error: {err}; using defaults")],
                     invalid_sections: Vec::new(),
-                });
+                };
             }
         };
+        Self::load_from_str(&content)
+    }
 
-        match deserialize_with_ignored::<Config, _>(toml::Deserializer::new(&content)) {
-            Ok((config, ignored_keys)) => {
+    fn load_from_str(content: &str) -> LoadedConfig {
+        match deserialize_with_ignored::<Config, _>(toml::Deserializer::new(content)) {
+            Ok((mut config, ignored_keys)) => {
+                let table = content.parse::<toml::Value>().ok();
                 let (unknown_sections, mut diagnostics) =
-                    unknown_top_level_sections_from_str(&content);
+                    unknown_top_level_sections_from_value(table.as_ref());
                 diagnostics.extend(unknown_config_key_diagnostics(
                     ignored_keys
                         .into_iter()
-                        .filter(|path| {
-                            !matches!(path.as_slice(), [ConfigKeyPathSegment::Key(key)] if unknown_sections.contains(key))
+                        .filter(|path| match path.as_slice() {
+                            // `[[tui]]` is validated per entry below, not by serde.
+                            [ConfigKeyPathSegment::Key(key), ..] if key == "tui" => false,
+                            [ConfigKeyPathSegment::Key(key)] => !unknown_sections.contains(key),
+                            _ => true,
                         })
                         .collect(),
                     None,
                 ));
                 diagnostics.extend(config.collect_diagnostics());
-                with_tuis(LoadedConfig {
+                apply_tuis(
+                    &mut config,
+                    table.as_ref().and_then(|table| table.get("tui")),
+                    &mut diagnostics,
+                );
+                LoadedConfig {
                     config,
                     diagnostics,
                     invalid_sections: Vec::new(),
-                })
+                }
             }
             Err(err) => {
                 warn!(err = %err, "config parse error, using defaults");
-                with_tuis(LoadedConfig {
+                LoadedConfig {
                     config: Self::default(),
                     diagnostics: vec![format!("config parse error: {err}; using defaults")],
                     invalid_sections: Vec::new(),
-                })
+                }
             }
         }
     }
@@ -247,11 +260,11 @@ pub fn load_live_config() -> Result<LoadedConfig, Vec<String>> {
     let content = match read_optional_config(&path) {
         Ok(Some(content)) => content,
         Ok(None) => {
-            return Ok(with_tuis(LoadedConfig {
+            return Ok(LoadedConfig {
                 config: Config::default(),
                 diagnostics: Vec::new(),
                 invalid_sections: Vec::new(),
-            }));
+            });
         }
         Err(err) => {
             return Err(vec![format!(
@@ -377,31 +390,27 @@ fn load_live_config_from_str(content: &str) -> Result<LoadedConfig, Vec<String>>
     );
 
     diagnostics.extend(config.theme.diagnostics());
+    apply_tuis(&mut config, table.get("tui"), &mut diagnostics);
 
-    Ok(with_tuis(LoadedConfig {
+    Ok(LoadedConfig {
         config,
         diagnostics,
         invalid_sections,
-    }))
+    })
 }
 
-/// Attaches the TUI launcher entries from `tuis.toml` to a loaded config.
-///
-/// TUI diagnostics are recorded on the config and appended after the
-/// config's own diagnostics.
-fn with_tuis(mut loaded: LoadedConfig) -> LoadedConfig {
-    let (tuis, tui_diagnostics) = super::load_tuis();
-    loaded.config.tuis = tuis;
-    loaded.diagnostics.extend(tui_diagnostics.iter().cloned());
-    loaded.config.tui_diagnostics = tui_diagnostics;
-    loaded
+/// Attaches the validated `[[tui]]` entries of `config.toml` to a config.
+/// Invalid entries are skipped individually and reported in `diagnostics`.
+fn apply_tuis(config: &mut Config, value: Option<&toml::Value>, diagnostics: &mut Vec<String>) {
+    let (tuis, tui_diagnostics) = super::tuis::parse_tuis(value);
+    config.tuis = tuis;
+    diagnostics.extend(tui_diagnostics);
 }
 
-fn unknown_top_level_sections_from_str(content: &str) -> (Vec<String>, Vec<String>) {
-    let Ok(value) = content.parse::<toml::Value>() else {
-        return (Vec::new(), Vec::new());
-    };
-    let Some(table) = value.as_table() else {
+fn unknown_top_level_sections_from_value(
+    value: Option<&toml::Value>,
+) -> (Vec<String>, Vec<String>) {
+    let Some(table) = value.and_then(toml::Value::as_table) else {
         return (Vec::new(), Vec::new());
     };
 
@@ -895,6 +904,104 @@ mod tests {
 
         std::env::remove_var(CONFIG_PATH_ENV_VAR);
         let _ = std::fs::remove_dir_all(path);
+    }
+
+    const TUI_CONFIG: &str = r#"
+[ui]
+confirm_close = false
+
+[[tui]]
+id = "lazygit"
+key = "g"
+title = "lazygit"
+command = ["lazygit"]
+
+[[tui]]
+id = "bad"
+key = "prefix+b"
+title = "Bad"
+command = ["bad"]
+"#;
+
+    #[test]
+    fn startup_config_reads_tui_entries_from_config_toml() {
+        let loaded = Config::load_from_str(TUI_CONFIG);
+
+        assert_eq!(loaded.config.tuis.len(), 1);
+        assert_eq!(loaded.config.tuis[0].id, "lazygit");
+        assert!(!loaded.config.ui.confirm_close);
+        assert_eq!(
+            loaded.diagnostics,
+            vec!["tui[1].key must be one submenu-local key"]
+        );
+    }
+
+    #[test]
+    fn live_config_reads_tui_entries_from_config_toml() {
+        let loaded = load_live_config_from_str(TUI_CONFIG).unwrap();
+
+        assert_eq!(loaded.config.tuis.len(), 1);
+        assert_eq!(loaded.config.tuis[0].id, "lazygit");
+        assert_eq!(
+            loaded.diagnostics,
+            vec!["tui[1].key must be one submenu-local key"]
+        );
+        assert!(loaded.invalid_sections.is_empty());
+    }
+
+    #[test]
+    fn non_array_tui_key_is_reported_without_rejecting_config() {
+        let content = "tui = \"lazygit\"\n\n[ui]\nconfirm_close = false\n";
+
+        let startup = Config::load_from_str(content);
+        assert!(!startup.config.ui.confirm_close);
+        assert!(startup.config.tuis.is_empty());
+        assert_eq!(startup.diagnostics.len(), 1, "{:?}", startup.diagnostics);
+        assert!(startup.diagnostics[0].starts_with("invalid tui config"));
+
+        let live = load_live_config_from_str(content).unwrap();
+        assert!(!live.config.ui.confirm_close);
+        assert_eq!(live.diagnostics, startup.diagnostics);
+    }
+
+    #[test]
+    fn config_reload_picks_up_tui_changes() {
+        let _guard = crate::config::test_config_env_lock().lock().unwrap();
+        let path = std::env::temp_dir().join(format!(
+            "herdr-config-tui-reload-{}.toml",
+            std::process::id()
+        ));
+        std::env::set_var(CONFIG_PATH_ENV_VAR, &path);
+
+        std::fs::write(
+            &path,
+            "[[tui]]\nid = \"btop\"\nkey = \"b\"\ntitle = \"btop\"\ncommand = [\"btop\"]\n",
+        )
+        .unwrap();
+        let first = load_live_config().unwrap();
+
+        std::fs::write(
+            &path,
+            "[[tui]]\nid = \"yazi\"\nkey = \"f\"\ntitle = \"yazi\"\ncommand = [\"yazi\"]\n\n\
+             [[tui]]\nid = \"btop\"\nkey = \"b\"\ntitle = \"btop\"\ncommand = [\"btop\"]\n",
+        )
+        .unwrap();
+        let second = load_live_config().unwrap();
+
+        std::env::remove_var(CONFIG_PATH_ENV_VAR);
+        let _ = std::fs::remove_file(path);
+
+        let ids = |loaded: &LoadedConfig| {
+            loaded
+                .config
+                .tuis
+                .iter()
+                .map(|tui| tui.id.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ids(&first), vec!["btop"]);
+        assert_eq!(ids(&second), vec!["yazi", "btop"]);
+        assert!(second.diagnostics.is_empty(), "{:?}", second.diagnostics);
     }
 
     #[test]
