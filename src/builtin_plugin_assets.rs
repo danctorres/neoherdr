@@ -1,4 +1,7 @@
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+
+use crate::api::schema::InstalledPluginInfo;
 
 /// `(plugin id, manifest, [(bin file name, contents)])`.
 type BundledPlugin = (
@@ -34,27 +37,77 @@ pub(crate) fn default_group_members(
     ]
 }
 
-pub(crate) fn materialize() -> std::io::Result<Vec<PathBuf>> {
-    PLUGINS
-        .iter()
-        .map(|(id, manifest, files)| {
-            let root = crate::plugin_paths::builtin_plugin_dir(id);
-            // bin/ is owned by Herdr; rebuild it so scripts dropped from a
-            // bundled plugin do not linger after an upgrade.
-            match std::fs::remove_dir_all(root.join("bin")) {
-                Err(err) if err.kind() != std::io::ErrorKind::NotFound => return Err(err),
-                _ => {}
+/// Whether `plugin_id` names a plugin bundled with the binary.
+pub(crate) fn is_bundled(plugin_id: &str) -> bool {
+    PLUGINS.iter().any(|(id, _, _)| *id == plugin_id)
+}
+
+/// Registers every bundled plugin that is neither registered nor declined,
+/// and refreshes the on-disk assets of bundled plugins the registry still
+/// uses. Declined plugins, and ids taken by a plugin from another source, get
+/// no files written. Returns whether `plugins` changed.
+pub(crate) fn register_bundled(
+    plugins: &mut Vec<InstalledPluginInfo>,
+    declined: &BTreeSet<String>,
+) -> bool {
+    register_bundled_with(plugins, declined, crate::plugin_paths::builtin_plugin_dir)
+}
+
+fn register_bundled_with(
+    plugins: &mut Vec<InstalledPluginInfo>,
+    declined: &BTreeSet<String>,
+    root_for: impl Fn(&str) -> PathBuf,
+) -> bool {
+    let mut changed = false;
+    for (id, manifest, files) in PLUGINS {
+        if declined.contains(*id) {
+            continue;
+        }
+        let root = root_for(id);
+        let registered = plugins.iter().find(|plugin| plugin.plugin_id == *id);
+        if registered.is_some_and(|plugin| !crate::plugin_paths::is_plugin_rooted_at(plugin, &root))
+        {
+            continue;
+        }
+        if let Err(err) = materialize(&root, manifest, files) {
+            tracing::warn!(plugin_id = id, err = %err, "failed to materialize built-in plugin");
+            continue;
+        }
+        if registered.is_some() {
+            continue;
+        }
+        match crate::app::load_plugin_manifest(&root.display().to_string(), true) {
+            Ok(plugin) => {
+                plugins.push(plugin);
+                changed = true;
             }
-            std::fs::create_dir_all(root.join("bin"))?;
-            std::fs::write(root.join("herdr-plugin.toml"), manifest)?;
-            for (name, contents) in *files {
-                let path = root.join("bin").join(name);
-                std::fs::write(&path, contents)?;
-                set_executable(&path)?;
+            Err((_, err)) => {
+                tracing::warn!(plugin_id = id, err = %err, "failed to register built-in plugin");
             }
-            Ok(root)
-        })
-        .collect()
+        }
+    }
+    changed
+}
+
+fn materialize(
+    root: &Path,
+    manifest: &str,
+    files: &[(&'static str, &'static str)],
+) -> std::io::Result<()> {
+    // bin/ is owned by Herdr; rebuild it so scripts dropped from a
+    // bundled plugin do not linger after an upgrade.
+    match std::fs::remove_dir_all(root.join("bin")) {
+        Err(err) if err.kind() != std::io::ErrorKind::NotFound => return Err(err),
+        _ => {}
+    }
+    std::fs::create_dir_all(root.join("bin"))?;
+    std::fs::write(root.join("herdr-plugin.toml"), manifest)?;
+    for (name, contents) in files {
+        let path = root.join("bin").join(name);
+        std::fs::write(&path, contents)?;
+        set_executable(&path)?;
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -128,6 +181,72 @@ mod tests {
                 "{plugin}.{action}"
             );
         }
+    }
+
+    fn temp_root(name: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        std::env::temp_dir().join(format!(
+            "herdr-bundled-{name}-{}-{nanos}",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn register_bundled_adds_missing_plugins_and_writes_their_files() {
+        let base = temp_root("register");
+        let mut plugins = Vec::new();
+
+        let changed = register_bundled_with(&mut plugins, &BTreeSet::new(), |id| base.join(id));
+
+        assert!(changed);
+        assert_eq!(plugins.len(), 1);
+        assert_eq!(plugins[0].plugin_id, "worktrunk");
+        assert!(plugins[0].enabled);
+        assert!(base.join("worktrunk/bin/open").is_file());
+        assert!(!register_bundled_with(
+            &mut plugins,
+            &BTreeSet::new(),
+            |id| base.join(id)
+        ));
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn register_bundled_skips_declined_plugins_without_writing_files() {
+        let base = temp_root("declined");
+        let mut plugins = Vec::new();
+        let declined = BTreeSet::from(["worktrunk".to_string()]);
+
+        let changed = register_bundled_with(&mut plugins, &declined, |id| base.join(id));
+
+        assert!(!changed);
+        assert!(plugins.is_empty());
+        assert!(!base.exists());
+    }
+
+    #[test]
+    fn register_bundled_leaves_a_plugin_with_the_same_id_from_elsewhere_alone() {
+        let base = temp_root("shadowed");
+        let elsewhere = temp_root("user-worktrunk");
+        std::fs::create_dir_all(elsewhere.join("bin")).unwrap();
+        std::fs::write(
+            elsewhere.join("herdr-plugin.toml"),
+            manifest_for("worktrunk"),
+        )
+        .unwrap();
+        let user =
+            crate::app::load_plugin_manifest(&elsewhere.display().to_string(), false).unwrap();
+        let mut plugins = vec![user.clone()];
+
+        let changed = register_bundled_with(&mut plugins, &BTreeSet::new(), |id| base.join(id));
+
+        assert!(!changed);
+        assert_eq!(plugins, vec![user]);
+        assert!(!base.exists());
+        let _ = std::fs::remove_dir_all(elsewhere);
     }
 
     #[test]

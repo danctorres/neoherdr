@@ -713,6 +713,7 @@ pub(super) enum PendingEndpointKind {
     PaneLinkResolve {
         target: super::link_hover::LinkHoverTarget,
     },
+    PluginActions,
     PaneLinkActivate {
         pane_id: String,
         inner_rect: Rect,
@@ -950,6 +951,9 @@ pub(crate) struct ClientShellState {
     pub(super) mode: ClientShellMode,
     pub(super) key_hint: Option<KeyHintState>,
     pub(super) active_key_group: Option<String>,
+    /// Qualified ids of the plugin actions the active endpoint can run, or
+    /// `None` until it has answered.
+    pub(super) plugin_actions: Option<HashSet<String>>,
     pub(super) navigate_workspace_id: Option<WorkspaceNavigationTarget>,
     pub(super) pending_workspace_highlight: Option<PendingWorkspaceHighlight>,
     pub(super) reveal_navigation_workspace: bool,
@@ -1117,6 +1121,7 @@ impl ClientShellState {
             mode: ClientShellMode::Terminal,
             key_hint: None,
             active_key_group: None,
+            plugin_actions: None,
             navigate_workspace_id: None,
             pending_workspace_highlight: None,
             reveal_navigation_workspace: false,
@@ -1253,11 +1258,10 @@ impl ClientShellState {
         if !self.config.local_keys.show_which_key {
             return;
         }
-        let entries = crate::input::group_entries_where(
-            &self.config.keybinds.keybinds,
-            group,
-            |action| !matches!(action, crate::config::KeyGroupAction::Builtin(action) if !self.builtin_action_available(*action)),
-        );
+        let entries =
+            crate::input::group_entries_where(&self.config.keybinds.keybinds, group, |action| {
+                self.key_group_action_available(action)
+            });
         self.show_key_hint(entries);
     }
 
@@ -1339,6 +1343,7 @@ impl ClientShellState {
     }
 
     pub(super) fn reset_endpoint_projection(&mut self) {
+        self.plugin_actions = None;
         self.hits = ShellHitMap::default();
         self.pane_surface = None;
         self.pending_pane_surface = None;

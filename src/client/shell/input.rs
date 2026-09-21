@@ -598,8 +598,14 @@ impl ClientShellState {
                     }
                     if let Some(binding) =
                         crate::input::resolve_group_key(&self.config.keybinds.keybinds, &group, key)
-                            .filter(|binding| {
-                                !matches!(binding, crate::input::KeybindMatch::Action(action) if !self.builtin_action_available(*action))
+                            .filter(|binding| match binding {
+                                crate::input::KeybindMatch::Action(action) => {
+                                    self.builtin_action_available(*action)
+                                }
+                                crate::input::KeybindMatch::PluginAction(action) => {
+                                    self.plugin_action_available(action)
+                                }
+                                _ => true,
                             })
                     {
                         self.active_key_group = None;
@@ -634,6 +640,7 @@ impl ClientShellState {
                 {
                     if let crate::input::KeybindMatch::Group(group) = binding {
                         self.maybe_show_key_group_hint(&group);
+                        self.refresh_plugin_actions_for_group(&group, outcome);
                         self.active_key_group = Some(group);
                         outcome.repaint = true;
                         return None;

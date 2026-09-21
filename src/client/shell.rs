@@ -28,6 +28,7 @@ mod mouse;
 mod notification_policy;
 mod notifications;
 mod overlay_input;
+mod plugin_actions;
 mod preferences;
 mod render;
 mod scroll;

@@ -13,10 +13,12 @@ pub use encode::{
 pub(crate) use keybind_help::{
     filter_keybind_help_groups, keybind_help_groups, keybind_help_text_char, prefix_menu_entries,
 };
+#[cfg(test)]
+pub(crate) use keybindings::group_entries;
 pub(crate) use keybindings::{
-    group_entries, group_entries_where, resolve_custom_command, resolve_direct_binding,
-    resolve_group_key, resolve_indexed_action, resolve_non_indexed_action, resolve_prefix_binding,
-    KeybindAction, KeybindDispatch, KeybindMatch,
+    group_entries_where, resolve_custom_command, resolve_direct_binding, resolve_group_key,
+    resolve_indexed_action, resolve_non_indexed_action, resolve_prefix_binding, KeybindAction,
+    KeybindDispatch, KeybindMatch,
 };
 pub(crate) use lease::{InputLeaseKey, InputLeaseTable, RepeatPlan};
 #[cfg(not(windows))]

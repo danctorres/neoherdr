@@ -326,11 +326,16 @@ fn plugin_uninstall(args: &[String]) -> std::io::Result<i32> {
             }
         }
         Err(err) if is_connection_error(&err) => {
-            let (removed, _) = crate::persist::plugin_registry::update(|plugins| {
-                let before = plugins.len();
-                plugins.retain(|plugin| plugin.plugin_id != plugin_id);
-                before != plugins.len()
-            })?;
+            let (removed, _) =
+                crate::persist::plugin_registry::update_with_declined(|plugins, declined| {
+                    let before = plugins.len();
+                    plugins.retain(|plugin| plugin.plugin_id != plugin_id);
+                    let removed = before != plugins.len();
+                    if removed && crate::builtin_plugin_assets::is_bundled(&plugin_id) {
+                        declined.insert(plugin_id.clone());
+                    }
+                    removed
+                })?;
             if !removed {
                 eprintln!("plugin not installed: {target}");
                 return Ok(1);
@@ -934,7 +939,8 @@ fn load_cli_plugin_manifest(path: &Path, enabled: bool) -> std::io::Result<Insta
 
 fn persist_plugin_offline(plugin: &InstalledPluginInfo) -> std::io::Result<()> {
     crate::plugin_paths::ensure_plugin_user_dirs(&plugin.plugin_id)?;
-    crate::persist::plugin_registry::update(|plugins| {
+    crate::persist::plugin_registry::update_with_declined(|plugins, declined| {
+        declined.remove(&plugin.plugin_id);
         plugins.retain(|entry| entry.plugin_id != plugin.plugin_id);
         plugins.push(plugin.clone());
     })?;
