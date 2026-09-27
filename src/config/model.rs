@@ -416,6 +416,7 @@ pub struct KeysConfig {
     pub rename_pane: BindingConfig,
     /// Open the focused pane scrollback in $EDITOR. Unset by default; reachable as `p e` in the pane menu.
     pub edit_scrollback: BindingConfig,
+    /// Clear the focused pane screen and scrollback. Unset by default; reachable as `p k` in the pane menu.
     pub clear_pane: BindingConfig,
     /// Enter keyboard copy mode for the focused pane. Default: "prefix+y" (vim yank).
     pub copy_mode: BindingConfig,

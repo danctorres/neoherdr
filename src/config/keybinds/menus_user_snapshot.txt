@@ -24,6 +24,7 @@ group pane "pane" opener=["prefix+p"] user=false
   s ["s"] Builtin(SwapWithFocusedPane) "swap with focused pane"
   p ["p"] Builtin(LastPane) "previous (last) pane"
   e ["e"] Builtin(EditScrollback) "edit scrollback"
+  k ["k"] Builtin(ClearPane) "clear screen and scrollback"
   y ["y"] Builtin(CopyMode) "copy mode"
 group agent "agent" opener=["prefix+a"] user=false
   n ["n"] Builtin(NewAgentTab) "new agent tab…"
@@ -151,6 +152,7 @@ help pane menu (prefix+p)
   s swap with focused pane
   p previous (last) pane
   e edit scrollback
+  k clear screen and scrollback
   y copy mode
 help agent menu (prefix+a)
   n new agent tab…
