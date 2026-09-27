@@ -143,46 +143,34 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # alt+..., cmd/super, and punctuation-with-modifiers may depend on your terminal/tmux setup.
 # prefix = "ctrl+b"
 
-# Prefix-mode actions
+# Show the which-key hint as soon as the prefix is pressed.
+# show_which_key = true
+
+# Prefix-mode actions. The hot path is one key after the prefix; everything
+# else lives in a menu (see the menu openers below) and is unset here by default.
 # help = "prefix+?"
-# settings = "prefix+s"
+# goto = "prefix+/"
 # detach = "prefix+q"
-# reload_config = "prefix+shift+r"
-# open_notification_target = "prefix+o"
-# workspace_picker = "prefix+w"
-# goto = "prefix+g"
-# new_workspace = "prefix+shift+n"
-# new_worktree = "prefix+shift+g"
-# open_worktree = ""    # optional, unset by default
-# remove_worktree = ""  # optional, unset by default; opens confirmation
-# rename_workspace = "prefix+shift+w"
-# close_workspace = "prefix+shift+d"
-# previous_workspace = "" # optional, unset by default
-# next_workspace = ""     # optional, unset by default
-# previous_agent = ""     # optional, unset by default
-# next_agent = ""         # optional, unset by default
-# focus_agent = ""        # optional indexed binding, e.g. "prefix+alt+1..9"
-# remote_image_paste = "ctrl+v" # only active in herdr --remote; empty disables raw-key image paste
-# new_tab = "prefix+c"
-# rename_tab = "prefix+shift+t"
-# previous_tab = "prefix+p"
-# next_tab = "prefix+n"
-# move_tab_previous = ""   # optional, e.g. "alt+shift+left" moves the tab toward the front
-# move_tab_next = ""       # optional, e.g. "alt+shift+right" moves the tab toward the back
+# previous_tab = "prefix+["
+# next_tab = "prefix+]"
+# move_tab_previous = "prefix+{"
+# move_tab_next = "prefix+}"
 # switch_tab = "prefix+1..9"
 # switch_workspace = ""   # optional indexed binding, e.g. "prefix+shift+1..9"
-# close_tab = "prefix+shift+x"
-# rename_pane = "prefix+shift+p"
-# edit_scrollback = "prefix+e"
-# clear_pane = ""                  # unbound; e.g. "prefix+ctrl+k"
+# focus_agent = ""        # optional indexed binding, e.g. "prefix+alt+1..9"
+# copy_mode = "prefix+y"
 # focus_pane_left = "prefix+h"
 # focus_pane_down = "prefix+j"
 # focus_pane_up = "prefix+k"
 # focus_pane_right = "prefix+l"
+# swap_pane_left = "prefix+shift+h"
+# swap_pane_down = "prefix+shift+j"
+# swap_pane_up = "prefix+shift+k"
+# swap_pane_right = "prefix+shift+l"
 # cycle_pane_next = "prefix+tab"
 # cycle_pane_previous = "prefix+shift+tab"
-# last_pane = ""          # optional, unset by default; bind e.g. "prefix+tab" for global back-and-forth
-# split_vertical = "prefix+v"
+# last_pane = "prefix+semicolon"
+# split_vertical = "prefix+backslash"
 # split_horizontal = "prefix+minus"
 # close_pane = "prefix+x"
 # zoom = "prefix+z"       # legacy alias: fullscreen
@@ -191,7 +179,17 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # resize_pane_down = ""   # optional, e.g. "ctrl+shift+alt+down"
 # resize_pane_up = ""     # optional, e.g. "ctrl+shift+alt+up"
 # resize_pane_right = ""  # optional, e.g. "ctrl+shift+alt+right"
-# toggle_sidebar = "prefix+b"
+# remote_image_paste = "ctrl+v" # only active in herdr --remote; empty disables raw-key image paste
+
+# Menu openers. Inside a menu, n is new, r rename, x close or remove, s switch.
+# workspace_menu = "prefix+w" # n new, r rename, x close, s switch, j/k next/previous, g expand/collapse group
+# tab_menu = "prefix+t"       # n new, r rename, x close, h/l previous/next, H/L move
+# pane_menu = "prefix+p"      # r rename, c clear name, x close, z zoom, \ / - split, s swap, p last, e edit scrollback, k clear, y copy mode
+# agent_menu = "prefix+a"     # n new agent tab, a jump to notification, j/k next/previous agent
+# git_menu = "prefix+g"       # n new worktree, o open worktree, x remove worktree
+# system_menu = "prefix+s"    # s settings, r reload config, b toggle sidebar, ? keybinds, q detach
+# tui_menu = "prefix+o"       # the [[tui]] entries below
+# Any menu action can also get its own binding, e.g. new_tab = "prefix+c".
 
 # Navigate-mode movement. These local shortcuts win while navigate mode is open.
 # They are independent from focus_pane_*. Do not include prefix+, esc, enter, tab, or 1..9 here.
@@ -446,7 +444,9 @@ pane_history = false
 # scrollback_limit_bytes = 10000000
 
 # System TUIs for the open menu (prefix+o). Each key is local to that menu.
-# command is an argv list resolved from PATH, not run through a shell.
+# command is an argv list, quoted and run through your interactive shell
+# (default_shell, else $SHELL) so rc-file PATH and exports apply; on Windows
+# it runs directly.
 # type = "popup" (default) or "tab"; width/height apply to popups.
 # [[tui]]
 # id = "lazygit"
