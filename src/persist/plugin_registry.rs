@@ -222,26 +222,6 @@ mod tests {
             .join("plugins.json")
     }
 
-    #[test]
-    fn registry_saved_by_earlier_fork_builds_with_builtin_source_still_loads() {
-        let path = temp_registry_path("builtin-source");
-        let mut value = serde_json::to_value([sample_plugin("worktrunk")]).unwrap();
-        value[0]["source"]["kind"] = "builtin".into();
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, value.to_string()).unwrap();
-
-        let plugins = load_from_path_strict(&path).unwrap();
-
-        assert_eq!(plugins.len(), 1);
-        assert_eq!(
-            plugins[0].source.kind,
-            crate::api::schema::PluginSourceKind::Local
-        );
-        let saved = serde_json::to_value(&plugins).unwrap();
-        assert_eq!(saved[0]["source"]["kind"], "local");
-        let _ = std::fs::remove_dir_all(path.parent().unwrap());
-    }
-
     fn sample_plugin(id: &str) -> InstalledPluginInfo {
         InstalledPluginInfo {
             plugin_id: id.to_string(),

@@ -139,6 +139,7 @@ pub(super) fn render_worktree_open_overlay(
         p,
     )
 }
+
 pub(super) fn render_worktree_remove_overlay(
     b: &mut Buffer,
     remove: &ClientWorktreeRemoveOverlay,
