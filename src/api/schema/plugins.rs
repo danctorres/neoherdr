@@ -108,10 +108,8 @@ impl Default for PluginSourceInfo {
 #[serde(rename_all = "snake_case")]
 pub enum PluginSourceKind {
     // Built-in plugins persist as `local` so the shared registry stays
-    // readable by upstream herdr; accept the `builtin` value earlier fork
-    // builds wrote.
+    // readable by upstream herdr.
     #[default]
-    #[serde(alias = "builtin")]
     Local,
     Github,
 }
