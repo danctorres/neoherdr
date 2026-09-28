@@ -17,16 +17,22 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-666666?labelColor=333333" alt="Apache 2.0 license" /></a>
-  <a href="https://github.com/herdrdev/herdr/releases"><img src="https://img.shields.io/github/downloads/herdrdev/herdr/total?labelColor=333333&color=666666" alt="total GitHub release downloads" /></a>
-  <a href="https://github.com/herdrdev/herdr/stargazers"><img src="https://img.shields.io/github/stars/herdrdev/herdr?labelColor=333333&color=666666&logo=github" alt="GitHub stars" /></a>
-  <a href="https://github.com/herdrdev/herdr/releases/latest"><img src="https://img.shields.io/github/v/release/herdrdev/herdr?label=release&labelColor=333333&color=666666" alt="latest stable release" /></a>
-  <a href="https://formulae.brew.sh/formula/herdr"><img src="https://img.shields.io/homebrew/v/herdr?label=homebrew&labelColor=333333&color=666666" alt="Homebrew version" /></a>
-  <a href="https://x.com/herdrdev"><img src="https://img.shields.io/badge/follow-%40herdrdev-000000?logo=x&logoColor=white" alt="follow @herdrdev on X" /></a>
 </p>
 
 ---
 
-https://github.com/user-attachments/assets/043ec09f-4bdd-41d5-aee0-8fda6b83e267
+## what neoherdr changes
+
+- **which-key menus** — `prefix` opens a grouped menu of every action; the menus are config, so you can rearrange them or add built-in actions to your own. [keyboard →](docs/next/website/src/content/docs/keyboard.mdx)
+- **keymap rules** — default keys follow five written rules (hot path is one key, menus are nouns, one verb vocabulary, one key per action, keys mirror the screen), so you can guess most bindings.
+- **agent picker** — `prefix+a n` lists the agents installed on the session's machine and opens one in a new tab.
+- **configured tuis** — declare `[[tui]]` entries in `config.toml` and open them from `prefix+o`. [configuration →](docs/next/website/src/content/docs/configuration.mdx)
+- **failed panes stay open** — an agent or tui that exits with an error keeps its output on screen until you press enter.
+- **launching through your shell** — agents and tuis start through your interactive shell, so rc-file `PATH` and exported keys reach them.
+
+everything else is upstream herdr.
+
+---
 
 **the runtime your coding agents live on.**
 
@@ -64,12 +70,6 @@ run your agents, split panes, walk away. `ctrl+b q` detaches, `herdr` reattaches
 the keymap and configuration differ from upstream, so read this fork's pages in the repo: [keyboard](docs/next/website/src/content/docs/keyboard.mdx) · [configuration](docs/next/website/src/content/docs/configuration.mdx). inside herdr, `prefix` opens the which-key menu and `prefix ?` shows every binding.
 
 everything else is shared with upstream at [herdr.dev/docs](https://herdr.dev/docs/): [quick start](https://herdr.dev/docs/quick-start/) · [concepts](https://herdr.dev/docs/concepts/) · [supported agents](https://herdr.dev/docs/agents/) · [session state](https://herdr.dev/docs/session-state/) · [connecting machines](https://herdr.dev/docs/connecting-machines/) · [remote](https://herdr.dev/docs/persistence-remote/) · [integrations](https://herdr.dev/docs/integrations/) · [plugins](https://herdr.dev/docs/plugins/) · [socket api](https://herdr.dev/docs/socket-api/)
-
-## thanks
-
-every past sponsor and backer is listed in [SPONSORS.md](./SPONSORS.md) — thank you 🐑
-
-enterprise / partnership: hey@herdr.dev
 
 ## agent instructions
 
