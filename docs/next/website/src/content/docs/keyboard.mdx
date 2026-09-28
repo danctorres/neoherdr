@@ -30,12 +30,17 @@ show_which_key = false
 
 ## How the keymap is laid out
 
-The default keys follow four rules, so once you know them you can guess most bindings:
+The default keys follow five rules, so once you know them you can guess most bindings:
 
-1. **The hot path is one key.** Moving focus, switching tabs, splitting, and zooming sit directly after the prefix.
+1. **The hot path is one key.** Moving focus, opening and switching tabs, splitting, closing, and zooming sit directly after the prefix.
 2. **Menus are nouns.** Everything else lives in a menu named after the object it acts on: workspace, tab, pane, agent, git, system, and open (TUIs).
 3. **One verb vocabulary.** Inside every menu, `n` is new, `r` rename, `x` close or remove, and `s` switch or pick.
-4. **Keys mirror the screen.** Tabs are a horizontal bar, so they use `h`/`l` (and `[`/`]` at the top level); workspaces and agents are vertical lists, so they use `j`/`k`. Shift turns "go to" into "move": `H`/`L` and `{`/`}` move a tab, `shift+h/j/k/l` swaps panes. Split keys look like the divider they draw: `\` splits side by side, `-` stacks.
+4. **One key per action.** A menu entry that also has a top-level key uses the same key in the menu: `x` closes, `z` zooms, `\` and `-` split, `;` goes to the last pane, and `y` enters copy mode, whether you press them after the prefix or inside `prefix+p`.
+5. **Keys mirror the screen.** Tabs are a horizontal bar, so they use `h`/`l` (and `[`/`]` at the top level); workspaces and agents are vertical lists, so they use `j`/`k`. Shift turns "go to" into "move": `H`/`L` and `{`/`}` move a tab, `J`/`K` move a workspace, `shift+h/j/k/l` swaps panes, and `:` (shifted `;`) swaps with the last pane. Split keys look like the divider they draw: `\` splits side by side, `-` stacks.
+
+The few keys that no rule covers follow common convention: `c` clears, `e` opens your editor, `,` opens settings, `?` shows help, `q` detaches, and `R` undoes the name that `r` set.
+
+The which-key popup lists the top level in the same groups as the table below, pane actions first, and shows each direction set as one entry, such as `h/j/k/l focus pane`.
 
 ## Top level
 
@@ -45,18 +50,19 @@ Press the prefix, then one key:
 | --- | --- |
 | Focus pane left / down / up / right | `prefix+h/j/k/l` |
 | Swap pane left / down / up / right | `prefix+shift+h/j/k/l` |
-| Previous / next tab | `prefix+[` / `prefix+]` |
-| Move tab left / right | `prefix+{` / `prefix+}` |
-| Jump to tab 1–9 | `prefix+1..9` |
 | Next / previous pane | `prefix+tab` / `prefix+shift+tab` |
 | Last focused pane | `prefix+;` |
 | Split side by side / stacked | `prefix+\` / `prefix+-` |
-| Close pane | `prefix+x` |
 | Zoom the focused pane | `prefix+z` |
+| Close pane | `prefix+x` |
 | Resize mode | `prefix+r` |
 | Copy mode | `prefix+y` |
-| Keybind help | `prefix+?` |
+| New tab | `prefix+n` |
+| Previous / next tab | `prefix+[` / `prefix+]` |
+| Move tab left / right | `prefix+{` / `prefix+}` |
+| Jump to tab 1–9 | `prefix+1..9` |
 | Session navigator (goto) | `prefix+/` |
+| Keybind help | `prefix+?` |
 | Detach, leave everything running | `prefix+q` |
 
 ## Menus
@@ -72,6 +78,7 @@ Workspace, `prefix+w`:
 | `x` | Close workspace |
 | `s` | Switch workspace (picker) |
 | `j` / `k` | Next / previous workspace |
+| `J` / `K` | Move workspace down / up (a worktree group moves together) |
 | `g` | Expand / collapse workspace group |
 
 Tab, `prefix+t`:
@@ -88,15 +95,15 @@ Pane, `prefix+p`:
 
 | Key | Action |
 | --- | --- |
-| `r` | Rename pane |
-| `c` | Clear the pane's custom name |
+| `\` / `-` | Split side by side / stacked |
 | `x` | Close pane |
 | `z` | Zoom pane |
-| `\` / `-` | Split side by side / stacked |
-| `s` | Swap selected pane with focused pane |
-| `p` | Previous (last focused) pane |
+| `;` | Last focused pane |
+| `:` | Swap with the last focused pane |
+| `r` | Rename pane |
+| `R` | Clear the pane's custom name |
 | `e` | Edit scrollback in `$EDITOR` |
-| `k` | Clear screen and scrollback |
+| `c` | Clear screen and scrollback |
 | `y` | Copy mode |
 
 Agent, `prefix+a`:
@@ -122,7 +129,7 @@ System, `prefix+s`:
 
 | Key | Action |
 | --- | --- |
-| `s` | Settings |
+| `,` | Settings |
 | `r` | Reload config |
 | `b` | Toggle sidebar |
 | `?` | Keybind help |
@@ -130,9 +137,9 @@ System, `prefix+s`:
 
 Open, `prefix+o`: the TUIs you configure as [`[[tui]]` entries](/docs/configuration/#system-tuis), each on its own key. The menu appears only when at least one TUI is configured.
 
-Menu openers are config fields (`workspace_menu`, `tab_menu`, `pane_menu`, `agent_menu`, `git_menu`, `system_menu`, `tui_menu`), so you can move them. The built-in menus are ordinary `[[keys.command]]` entries, so you can add your own entries to any menu, replace a built-in entry on the same key, or put built-in actions in menus of your own with `action = "<name>"`; see [Adding commands to menus](/docs/configuration/#adding-commands-to-menus). Every menu action is also a normal keybinding field that is unset by default, so `new_tab = "prefix+c"` gives you a tmux-style top-level key without losing `prefix+t n`. The full keymap and the binding syntax live in the [keybinding reference](/docs/configuration/#keybindings).
+Menu openers are config fields (`workspace_menu`, `tab_menu`, `pane_menu`, `agent_menu`, `git_menu`, `system_menu`, `tui_menu`), so you can move them. The built-in menus are ordinary `[[keys.command]]` entries, so you can add your own entries to any menu, replace a built-in entry on the same key, or put built-in actions in menus of your own with `action = "<name>"`; see [Adding commands to menus](/docs/configuration/#adding-commands-to-menus). Every menu action is also a normal keybinding field that is unset by default, so `rename_tab = "prefix+comma"` gives you a tmux-style top-level key without losing `prefix+t r`. The full keymap and the binding syntax live in the [keybinding reference](/docs/configuration/#keybindings).
 
-The Goto picker (`prefix+g`) lists each agent or terminal on its own row, grouped by workspace. Split tabs never hide their panes behind another row. Click a row or press Enter to jump directly to it. Press `/` to search names, agent kinds, tabs, workspaces, branches, or paths; use Up/Down or `j/k` to move between rows when not typing a search. Left/Right jumps to the first agent or terminal in the previous/next workspace section, without wrapping. While editing a search, Left/Right moves the text cursor instead. Outside search, `b/w/i/d` filter blocked, working, idle, or done agents, and `a` shows all terminals again. The selected destination's location and path appear below the list. When the list overflows, use the mouse wheel, click the scrollbar track, or drag its thumb to scroll without opening a destination.
+The Goto picker (`prefix+/`) lists each agent or terminal on its own row, grouped by workspace. Split tabs never hide their panes behind another row. Click a row or press Enter to jump directly to it. Press `/` to search names, agent kinds, tabs, workspaces, branches, or paths; use Up/Down or `j/k` to move between rows when not typing a search. Left/Right jumps to the first agent or terminal in the previous/next workspace section, without wrapping. While editing a search, Left/Right moves the text cursor instead. Outside search, `b/w/i/d` filter blocked, working, idle, or done agents, and `a` shows all terminals again. The selected destination's location and path appear below the list. When the list overflows, use the mouse wheel, click the scrollbar track, or drag its thumb to scroll without opening a destination.
 
 ## Editing text fields
 
@@ -175,7 +182,7 @@ Any chord works as a binding: `ctrl+j`, `alt+k`, whatever fits your hands. But a
 
 We mapped the default keybindings of Ghostty, iTerm2, Terminal.app, kitty, WezTerm, Alacritty, Warp, Windows Terminal, GNOME Terminal, and Konsole, plus the global shortcuts of GNOME and KDE. One modifier family is almost untouched everywhere: `ctrl+alt`. Terminals leave it free, it is not affected by the macOS option-key composing behavior that blocks plain `alt` chords, and it transmits even in terminals without a modern keyboard protocol. It is a safe default, but the choice is yours.
 
-This setup keeps the prefix bindings working and adds direct chords on top. `new_tab` has no top-level default, so it gets only the chord and stays reachable as `prefix+t n`:
+This setup keeps the prefix bindings working and adds direct chords on top:
 
 ```toml
 [keys]
@@ -185,7 +192,7 @@ focus_pane_up = ["prefix+k", "ctrl+alt+k"]
 focus_pane_right = ["prefix+l", "ctrl+alt+l"]
 previous_tab = ["prefix+[", "ctrl+alt+["]
 next_tab = ["prefix+]", "ctrl+alt+]"]
-new_tab = "ctrl+alt+c"
+new_tab = ["prefix+n", "ctrl+alt+c"]
 split_vertical = ["prefix+backslash", "ctrl+alt+d"]
 split_horizontal = ["prefix+minus", "ctrl+alt+shift+d"]
 zoom = ["prefix+z", "ctrl+alt+z"]

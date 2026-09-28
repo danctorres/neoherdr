@@ -5,6 +5,8 @@ group workspace "workspace" opener=["prefix+w"] user=false
   s ["s"] Builtin(WorkspacePicker) "switch workspace"
   j ["j"] Builtin(NextWorkspace) "next workspace"
   k ["k"] Builtin(PreviousWorkspace) "previous workspace"
+  shift+j ["shift+j"] Builtin(MoveWorkspaceNext) "move workspace down"
+  shift+k ["shift+k"] Builtin(MoveWorkspacePrevious) "move workspace up"
   g ["g"] Builtin(ToggleGroup) "expand/collapse group"
 group tab "tab" opener=["prefix+t", "prefix+shift+t"] user=true
   n ["n"] Command(1) "custom new tab"
@@ -15,16 +17,16 @@ group tab "tab" opener=["prefix+t", "prefix+shift+t"] user=true
   shift+h ["shift+h"] Builtin(MoveTabPrevious) "move tab left"
   shift+l ["shift+l"] Builtin(MoveTabNext) "move tab right"
 group pane "pane" opener=["prefix+p"] user=false
-  r ["r"] Builtin(RenamePane) "rename pane"
-  c ["c"] Builtin(ClearPaneName) "clear pane name"
-  x ["x"] Builtin(ClosePane) "close pane"
-  z ["z"] Builtin(Zoom) "zoom pane"
   \ ["\\"] Builtin(SplitVertical) "split side by side"
   - ["-"] Builtin(SplitHorizontal) "split stacked"
-  s ["s"] Builtin(SwapWithFocusedPane) "swap with focused pane"
-  p ["p"] Builtin(LastPane) "previous (last) pane"
+  x ["x"] Builtin(ClosePane) "close pane"
+  z ["z"] Builtin(Zoom) "zoom pane"
+  ; [";"] Builtin(LastPane) "last pane"
+  : [":"] Builtin(SwapWithFocusedPane) "swap with last pane"
+  r ["r"] Builtin(RenamePane) "rename pane"
+  shift+r ["shift+r"] Builtin(ClearPaneName) "clear pane name"
   e ["e"] Builtin(EditScrollback) "edit scrollback"
-  k ["k"] Builtin(ClearPane) "clear screen and scrollback"
+  c ["c"] Builtin(ClearPane) "clear screen and scrollback"
   y ["y"] Builtin(CopyMode) "copy mode"
 group agent "agent" opener=["prefix+a"] user=false
   n ["n"] Builtin(NewAgentTab) "new agent tab…"
@@ -36,7 +38,7 @@ group git "git" opener=["prefix+g"] user=false
   o ["o"] Builtin(OpenWorktree) "open worktree"
   x ["x"] Builtin(RemoveWorktree) "remove worktree"
 group system "system" opener=["prefix+s"] user=false
-  s ["s"] Builtin(Settings) "settings"
+  , [","] Builtin(Settings) "settings"
   r ["r"] Builtin(ReloadConfig) "reload config"
   b ["b"] Builtin(ToggleSidebar) "toggle sidebar"
   ? ["?"] Builtin(Help) "keybinds"
@@ -55,31 +57,22 @@ prefix s +system
 prefix o +open TUI
 prefix m +scripts
 prefix e +empty
-prefix ? keybinds
-prefix c new tab
-prefix [ previous tab
-prefix ] next tab
-prefix { move tab left
-prefix } move tab right
-prefix y copy mode
-prefix h focus pane left
-prefix j focus pane down
-prefix k focus pane up
-prefix l focus pane right
-prefix shift+h swap pane left
-prefix shift+j swap pane down
-prefix shift+k swap pane up
-prefix shift+l swap pane right
+prefix h/j/k/l focus pane
+prefix shift+h/j/k/l swap pane
+prefix tab / shift+tab cycle pane
 prefix ; last pane
-prefix tab cycle pane next
-prefix shift+tab cycle pane previous
 prefix \ split side by side
 prefix - split stacked
-prefix x close pane
 prefix z zoom pane
+prefix x close pane
 prefix r resize mode
-prefix q detach
+prefix y copy mode
+prefix c new tab
+prefix [/] previous / next tab
+prefix {/} move tab left / right
 prefix / session navigator
+prefix ? keybinds
+prefix q detach
 prefix 1..9 switch tab 1-9
 prefix alt+g custom command
 help global
@@ -93,31 +86,22 @@ help global
   prefix+o +open TUI
   prefix+m +scripts
   prefix+e +empty
-  prefix+? keybinds
-  prefix+c new tab
-  prefix+[ previous tab
-  prefix+] next tab
-  prefix+{ move tab left
-  prefix+} move tab right
-  prefix+y copy mode
-  prefix+h focus pane left
-  prefix+j focus pane down
-  prefix+k focus pane up
-  prefix+l focus pane right
-  prefix+shift+h swap pane left
-  prefix+shift+j swap pane down
-  prefix+shift+k swap pane up
-  prefix+shift+l swap pane right
+  prefix+h/j/k/l focus pane
+  prefix+shift+h/j/k/l swap pane
+  prefix+tab / prefix+shift+tab cycle pane
   prefix+; last pane
-  prefix+tab cycle pane next
-  prefix+shift+tab cycle pane previous
   prefix+\ split side by side
   prefix+- split stacked
-  prefix+x close pane
   prefix+z zoom pane
+  prefix+x close pane
   prefix+r resize mode
-  prefix+q detach
+  prefix+y copy mode
+  prefix+c new tab
+  prefix+[/] previous / next tab
+  prefix+{/} move tab left / right
   prefix+/ session navigator
+  prefix+? keybinds
+  prefix+q detach
   prefix+1..9 switch tab 1-9
 help navigation
   esc back
@@ -133,6 +117,8 @@ help workspace menu (prefix+w)
   s switch workspace
   j next workspace
   k previous workspace
+  shift+j move workspace down
+  shift+k move workspace up
   g expand/collapse group
 help tab menu (prefix+t / prefix+shift+t)
   n custom new tab
@@ -143,16 +129,16 @@ help tab menu (prefix+t / prefix+shift+t)
   shift+h move tab left
   shift+l move tab right
 help pane menu (prefix+p)
-  r rename pane
-  c clear pane name
-  x close pane
-  z zoom pane
   \ split side by side
   - split stacked
-  s swap with focused pane
-  p previous (last) pane
+  x close pane
+  z zoom pane
+  ; last pane
+  : swap with last pane
+  r rename pane
+  shift+r clear pane name
   e edit scrollback
-  k clear screen and scrollback
+  c clear screen and scrollback
   y copy mode
 help agent menu (prefix+a)
   n new agent tab…
@@ -164,7 +150,7 @@ help git menu (prefix+g)
   o open worktree
   x remove worktree
 help system menu (prefix+s)
-  s settings
+  , settings
   r reload config
   b toggle sidebar
   ? keybinds
