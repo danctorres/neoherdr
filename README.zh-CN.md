@@ -1,3 +1,5 @@
+> 本仓库是 herdr 的分支 neoherdr；它改动了哪些内容，请看[英文 README](README.md#what-neoherdr-changes)。
+
 # herdr
 
 
