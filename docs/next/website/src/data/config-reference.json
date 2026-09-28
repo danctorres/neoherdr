@@ -503,7 +503,7 @@
           "key": "keys.workspace_menu",
           "type": "keybinding",
           "default": "\"prefix+w\"",
-          "description": "Open the workspace menu (new, rename, close, switch, next/previous)."
+          "description": "Open the workspace menu (new, rename, close, switch, next/previous, move, group)."
         },
         {
           "key": "keys.tab_menu",
@@ -515,13 +515,13 @@
           "key": "keys.pane_menu",
           "type": "keybinding",
           "default": "\"prefix+p\"",
-          "description": "Open the pane menu (rename, clear name, split, close, zoom, scrollback, copy, swap)."
+          "description": "Open the pane menu (split, close, zoom, last, swap, rename, scrollback, clear, copy)."
         },
         {
           "key": "keys.agent_menu",
           "type": "keybinding",
           "default": "\"prefix+a\"",
-          "description": "Open the agent menu (jump to notification target, next/previous agent)."
+          "description": "Open the agent menu (new agent tab, jump to notification target, next/previous agent)."
         },
         {
           "key": "keys.git_menu",
@@ -545,7 +545,7 @@
           "key": "keys.settings",
           "type": "keybinding",
           "default": "unset",
-          "description": "Open settings. Unset by default; reachable as `s s` in the system menu."
+          "description": "Open settings. Unset by default; reachable as `s ,` in the system menu."
         },
         {
           "key": "keys.new_workspace",
@@ -688,8 +688,8 @@
         {
           "key": "keys.new_tab",
           "type": "keybinding",
-          "default": "unset",
-          "description": "Create a new tab in the active workspace. Unset by default; reachable as `t n` in the tab menu."
+          "default": "\"prefix+n\"",
+          "description": "Create a new tab in the active workspace. Also reachable as `t n` in the tab menu."
         },
         {
           "key": "keys.rename_tab",
@@ -720,6 +720,18 @@
           "type": "keybinding",
           "default": "\"prefix+}\"",
           "description": "Move the active tab one position toward the back."
+        },
+        {
+          "key": "keys.move_workspace_previous",
+          "type": "keybinding",
+          "default": "unset",
+          "description": "Move the selected workspace, with its worktree group, one row up the sidebar. Unset by default; reachable as `w K` in the workspace menu."
+        },
+        {
+          "key": "keys.move_workspace_next",
+          "type": "keybinding",
+          "default": "unset",
+          "description": "Move the selected workspace, with its worktree group, one row down the sidebar. Unset by default; reachable as `w J` in the workspace menu."
         },
         {
           "key": "keys.switch_tab",
@@ -755,7 +767,7 @@
           "key": "keys.clear_pane",
           "type": "keybinding",
           "default": "unset",
-          "description": "Clear the focused pane screen and scrollback, keeping the current cursor line and its visible soft-wrapped rows. Sends no input to the running program and does nothing on the alternate screen (for example, Vim). Unset by default; reachable as `p k` in the pane menu."
+          "description": "Clear the focused pane screen and scrollback, keeping the current cursor line and its visible soft-wrapped rows. Sends no input to the running program and does nothing on the alternate screen (for example, Vim). Unset by default; reachable as `p c` in the pane menu."
         },
         {
           "key": "keys.copy_mode",
@@ -899,13 +911,13 @@
           "key": "keys.clear_pane_name",
           "type": "keybinding",
           "default": "unset",
-          "description": "Clear the focused pane's custom name. Unset by default; reachable as `p c` in the pane menu."
+          "description": "Clear the focused pane's custom name. Unset by default; reachable as `p R` in the pane menu."
         },
         {
           "key": "keys.swap_with_focused_pane",
           "type": "keybinding",
           "default": "unset",
-          "description": "Swap the selected pane with the focused pane. Unset by default; reachable as `p s` in the pane menu."
+          "description": "Swap the focused pane with the last focused pane. Unset by default; reachable as `p :` in the pane menu."
         },
         {
           "key": "keys.indexed.tabs",
