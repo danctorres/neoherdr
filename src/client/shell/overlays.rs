@@ -176,7 +176,8 @@ pub(crate) fn render_key_hint(
     }
     let screen = buffer.area;
     // Small, content-sized, bottom-anchored advisory popup reusing the shared
-    // `panel()` primitive. Single column when it fits, otherwise two columns.
+    // `panel()` primitive. Single column when it fits, otherwise two columns
+    // filled top to bottom, so entries listed together stay together.
     let max_rows = screen.height.saturating_sub(4).max(1) as usize;
     let shown = hint.bindings.len().min(max_rows.saturating_mul(2).max(1));
     let columns = if hint.bindings.len() > max_rows { 2 } else { 1 };
@@ -185,8 +186,7 @@ pub(crate) fn render_key_hint(
         display_width(key) + 1 + display_width(label)
     };
     let col_width = |col: usize| {
-        (col..shown)
-            .step_by(columns)
+        (col * rows..((col + 1) * rows).min(shown))
             .map(|index| cell(&hint.bindings[index]))
             .max()
             .unwrap_or(0)
@@ -212,8 +212,8 @@ pub(crate) fn render_key_hint(
         .add_modifier(Modifier::BOLD);
     let label_style = Style::default().fg(palette.text).bg(palette.panel_bg);
     for (position, (key, label)) in hint.bindings.iter().take(shown).enumerate() {
-        let col = position % columns;
-        let row = (position / columns) as u16;
+        let col = position / rows;
+        let row = (position % rows) as u16;
         let mut cell_x = inner.x;
         for already in 0..col {
             cell_x = cell_x.saturating_add(col_width(already) + 2);

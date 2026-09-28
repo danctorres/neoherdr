@@ -77,13 +77,21 @@ pub(super) struct MenuEntry {
 
 /// The built-in which-key menus, written as `[[keys.command]]` entries: a
 /// `type = "group"` entry per menu (opened by its `keys.<id>_menu` field),
-/// then its members. Menus are named after the object they act on and share
-/// one verb vocabulary, so the same key means the same thing in every menu:
+/// then its members. Menus are named after the object they act on, and every
+/// key comes from one of these rules, in order:
 ///
-/// - `n` new, `r` rename, `x` close/remove, `s` switch/pick
+/// - one verb vocabulary: `n` new, `r` rename, `x` close/remove, `s`
+///   switch/pick
+/// - an entry that also has a top-level key uses that same key (`x`, `z`,
+///   `\`, `-`, `;`, `y`), so learning one level teaches the other
 /// - direction keys walk the item's own axis: `h`/`l` for the horizontal tab
 ///   bar, `j`/`k` for the vertical workspace and agent lists
-/// - shift turns "go to" into "move": `H`/`L` move a tab
+/// - shift turns "go to" into "move": `H`/`L` move a tab, `J`/`K` move a
+///   workspace, `:` (shifted `;`) swaps with the last pane
+/// - shift undoes the lowercase verb where there is no motion: `R` removes
+///   a name that `r` set
+/// - the rest follow common convention: `c` clear, `e` editor, `,`
+///   settings, `?` help, `q` detach
 /// - agents get no per-agent keys: `n` in the agent menu opens a picker of
 ///   the agents installed on the runtime host, so no default key depends on
 ///   what is installed
@@ -98,6 +106,8 @@ command = [
   { group = "workspace", key = "s", action = "workspace_picker" },
   { group = "workspace", key = "j", action = "next_workspace" },
   { group = "workspace", key = "k", action = "previous_workspace" },
+  { group = "workspace", key = "J", action = "move_workspace_next" },
+  { group = "workspace", key = "K", action = "move_workspace_previous" },
   { group = "workspace", key = "g", action = "toggle_group" },
 
   { type = "group", group = "tab", description = "tab" },
@@ -110,17 +120,16 @@ command = [
   { group = "tab", key = "L", action = "move_tab_next" },
 
   { type = "group", group = "pane", description = "pane" },
-  { group = "pane", key = "r", action = "rename_pane" },
-  { group = "pane", key = "c", action = "clear_pane_name" },
-  { group = "pane", key = "x", action = "close_pane" },
-  { group = "pane", key = "z", action = "zoom" },
   { group = "pane", key = "backslash", action = "split_vertical" },
   { group = "pane", key = "minus", action = "split_horizontal" },
-  { group = "pane", key = "s", action = "swap_with_focused_pane" },
-  { group = "pane", key = "p", action = "last_pane", description = "previous (last) pane" },
+  { group = "pane", key = "x", action = "close_pane" },
+  { group = "pane", key = "z", action = "zoom" },
+  { group = "pane", key = "semicolon", action = "last_pane" },
+  { group = "pane", key = ":", action = "swap_with_focused_pane" },
+  { group = "pane", key = "r", action = "rename_pane" },
+  { group = "pane", key = "R", action = "clear_pane_name" },
   { group = "pane", key = "e", action = "edit_scrollback" },
-  # `k` follows the terminal convention for clearing (cmd+k, ctrl+k).
-  { group = "pane", key = "k", action = "clear_pane", description = "clear screen and scrollback" },
+  { group = "pane", key = "c", action = "clear_pane" },
   { group = "pane", key = "y", action = "copy_mode" },
 
   { type = "group", group = "agent", description = "agent" },
@@ -135,7 +144,7 @@ command = [
   { group = "git", key = "x", action = "remove_worktree" },
 
   { type = "group", group = "system", description = "system" },
-  { group = "system", key = "s", action = "settings" },
+  { group = "system", key = "comma", action = "settings" },
   { group = "system", key = "r", action = "reload_config" },
   { group = "system", key = "b", action = "toggle_sidebar" },
   { group = "system", key = "?", action = "help" },

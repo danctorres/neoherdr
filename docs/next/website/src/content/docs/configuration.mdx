@@ -244,9 +244,9 @@ prefix = ["ctrl+space", "ctrl+s"]
 
 Every configured prefix enters the same prefix mode and starts every `prefix+...` action. The first entry is the primary prefix shown in the status bar; the in-app help panel at `prefix+?` lists all of them.
 
-The default keymap is prefix-first so Herdr does not steal input from shells, editors, tmux, or terminal apps. Only the hot path (pane focus, tabs, splits, zoom) sits one key after the prefix; everything else lives in menus such as `prefix+w` (workspace) and `prefix+t` (tab). See [Keyboard](/docs/keyboard/) for the full default layout. Search `keys.` in the [Config reference](/docs/config-reference/) to see every action and default binding. The in-app help panel at `prefix+?` shows the active bindings.
+The default keymap is prefix-first so Herdr does not steal input from shells, editors, tmux, or terminal apps. Only the hot path (pane focus, new and next tab, splits, zoom) sits one key after the prefix; everything else lives in menus such as `prefix+w` (workspace) and `prefix+t` (tab). See [Keyboard](/docs/keyboard/) for the full default layout. Search `keys.` in the [Config reference](/docs/config-reference/) to see every action and default binding. The in-app help panel at `prefix+?` shows the active bindings.
 
-Actions that are reachable through a menu are unset at the top level by default. Binding one directly, such as `new_tab = "prefix+c"` above, works exactly as written and keeps the menu entry.
+Most actions that are reachable through a menu are unset at the top level by default. Binding one directly, such as `rename_tab = "prefix+comma"`, works exactly as written and keeps the menu entry. Rebinding an action that has a top-level default, such as `new_tab = "prefix+c"` above, replaces that default.
 
 ### Menus
 

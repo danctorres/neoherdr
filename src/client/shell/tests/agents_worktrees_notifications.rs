@@ -1683,3 +1683,71 @@ fn semantic_notifications_use_client_policy_and_stable_navigation_targets() {
     assert!(state.visible_notification.is_none());
     assert_eq!(state.pending_notifications.len(), 1);
 }
+
+#[test]
+fn keyboard_workspace_move_matches_drag_and_wraps() {
+    let mut projected = snapshot();
+    projected.workspaces[0].worktree = Some(ClientShellWorktree {
+        key: "repo".into(),
+        label: "repo".into(),
+        is_linked_worktree: false,
+    });
+    let mut child = projected.workspaces[0].clone();
+    child.workspace_id = "ws_child".into();
+    child.number = 2;
+    child.focused = false;
+    child.worktree = Some(ClientShellWorktree {
+        key: "repo".into(),
+        label: "repo".into(),
+        is_linked_worktree: true,
+    });
+    let mut other = projected.workspaces[0].clone();
+    other.workspace_id = "ws_other".into();
+    other.number = 3;
+    other.focused = false;
+    other.worktree = None;
+    projected.workspaces.extend([child, other]);
+
+    let press = |focused: &str, action| {
+        let mut projected = projected.clone();
+        projected.focused_workspace_id = Some(focused.into());
+        let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+        state.set_snapshot(Box::new(projected));
+        let mut outcome = ClientShellInput::default();
+        state.record_binding(crate::input::KeybindMatch::Action(action), &mut outcome);
+        outcome.actions
+    };
+    use crate::input::KeybindAction::{MoveWorkspaceNext, MoveWorkspacePrevious};
+
+    // A linked worktree moves its whole group, through its root.
+    assert!(matches!(
+        &press("ws_child", MoveWorkspaceNext)[..],
+        [ClientShellAction::Endpoint { request, .. }]
+            if matches!(
+                &request.method,
+                crate::api::schema::Method::WorkspaceMoveBlock(params)
+                    if params.workspace_ids == ["ws_1", "ws_child"]
+                        && params.before_workspace_id.is_none()
+            )
+    ));
+    // A plain workspace moves one root row up.
+    assert!(matches!(
+        &press("ws_other", MoveWorkspacePrevious)[..],
+        [ClientShellAction::Endpoint { request, .. }]
+            if matches!(
+                &request.method,
+                crate::api::schema::Method::WorkspaceMove(params)
+                    if params.workspace_id == "ws_other" && params.insert_index == 0
+            )
+    ));
+    // Moving the last root down wraps it to the top.
+    assert!(matches!(
+        &press("ws_other", MoveWorkspaceNext)[..],
+        [ClientShellAction::Endpoint { request, .. }]
+            if matches!(
+                &request.method,
+                crate::api::schema::Method::WorkspaceMove(params)
+                    if params.workspace_id == "ws_other" && params.insert_index == 0
+            )
+    ));
+}
