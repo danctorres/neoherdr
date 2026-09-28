@@ -1039,6 +1039,53 @@ impl ClientShellState {
                     tab_id: tabs[next].tab_id.clone(),
                 }))
             }
+            KeybindAction::MoveWorkspacePrevious | KeybindAction::MoveWorkspaceNext => {
+                // Same move as dragging in the sidebar: root workspaces move
+                // one row, a worktree group moves with its root, and the
+                // ends wrap like tab moves.
+                let selected = self.workspace_action_id()?;
+                let is_linked = |workspace: &&ClientShellWorkspace| {
+                    workspace
+                        .worktree
+                        .as_ref()
+                        .is_some_and(|worktree| worktree.is_linked_worktree)
+                };
+                let selected = snapshot
+                    .workspaces
+                    .iter()
+                    .find(|workspace| workspace.workspace_id == selected)?;
+                let roots = snapshot
+                    .workspaces
+                    .iter()
+                    .filter(|workspace| !is_linked(workspace))
+                    .collect::<Vec<_>>();
+                let source = if is_linked(&selected) {
+                    let key = &selected.worktree.as_ref()?.key;
+                    roots.iter().find(|root| {
+                        root.worktree
+                            .as_ref()
+                            .is_some_and(|worktree| &worktree.key == key)
+                    })?
+                } else {
+                    &selected
+                };
+                let position = roots
+                    .iter()
+                    .position(|root| root.workspace_id == source.workspace_id)?;
+                let before = if action == KeybindAction::MoveWorkspaceNext {
+                    if position + 1 >= roots.len() {
+                        roots.first()
+                    } else {
+                        roots.get(position + 2)
+                    }
+                } else {
+                    position.checked_sub(1).and_then(|index| roots.get(index))
+                };
+                self.workspace_move_method(
+                    &source.workspace_id,
+                    before.map(|root| root.workspace_id.as_str()),
+                )
+            }
             KeybindAction::MoveTabPrevious | KeybindAction::MoveTabNext => {
                 let tabs = snapshot
                     .tabs

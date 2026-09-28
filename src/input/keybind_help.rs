@@ -4,7 +4,7 @@ use crossterm::event::{KeyCode, KeyModifiers};
 
 use crate::{
     config::{ActionKeybinds, IndexedKeybind, Keybinds},
-    input::TerminalKey,
+    input::{KeybindAction, TerminalKey},
 };
 
 pub(crate) type KeybindHelpEntry = (String, Cow<'static, str>);
@@ -61,6 +61,68 @@ fn indexed_range_prefix(bindings: &[IndexedKeybind]) -> Option<&str> {
     Some(prefix)
 }
 
+/// Actions that are one idea in two or four directions. The help and
+/// which-key list each set as one entry, `h/j/k/l focus pane`, instead of one
+/// row per direction. The first member marks the set's position.
+const DIRECTION_SETS: &[(&[KeybindAction], &str)] = {
+    use KeybindAction::*;
+    &[
+        (
+            &[FocusPaneLeft, FocusPaneDown, FocusPaneUp, FocusPaneRight],
+            "focus pane",
+        ),
+        (
+            &[SwapPaneLeft, SwapPaneDown, SwapPaneUp, SwapPaneRight],
+            "swap pane",
+        ),
+        (&[CyclePaneNext, CyclePanePrevious], "cycle pane"),
+        (
+            &[
+                ResizePaneLeft,
+                ResizePaneDown,
+                ResizePaneUp,
+                ResizePaneRight,
+            ],
+            "resize pane",
+        ),
+        (&[PreviousTab, NextTab], "previous / next tab"),
+        (&[MoveTabPrevious, MoveTabNext], "move tab left / right"),
+        (
+            &[PreviousWorkspace, NextWorkspace],
+            "previous / next workspace",
+        ),
+        (
+            &[MoveWorkspacePrevious, MoveWorkspaceNext],
+            "move workspace up / down",
+        ),
+        (&[PreviousAgent, NextAgent], "previous / next agent"),
+    ]
+};
+
+/// Joins the labels of a direction set. Labels that differ only in their last
+/// key share the rest: `prefix+shift+h/j/k/l`. Anything else is listed in
+/// full, `prefix+tab / prefix+shift+tab`.
+fn join_direction_labels(labels: &[String]) -> String {
+    fn split(label: &str) -> (&str, &str) {
+        match label.rfind('+') {
+            Some(index) if index + 1 < label.len() => label.split_at(index + 1),
+            _ => ("", label),
+        }
+    }
+    let (shared, _) = split(&labels[0]);
+    let keys = labels
+        .iter()
+        .map(|label| {
+            let (mods, key) = split(label);
+            (mods == shared && !label.contains(" / ")).then_some(key)
+        })
+        .collect::<Option<Vec<_>>>();
+    match keys {
+        Some(keys) => format!("{shared}{}", keys.join("/")),
+        None => labels.join(" / "),
+    }
+}
+
 /// Every built-in top-level binding as `(full label, description)`: menu
 /// openers (described as `+menu`), bound actions, and indexed actions.
 /// Unbound actions are omitted; they live in the menus.
@@ -72,8 +134,23 @@ fn top_level_entries(keybinds: &Keybinds) -> Vec<KeybindHelpEntry> {
         }
     }
     for (bindings, action) in super::keybindings::flat_action_bindings(keybinds) {
-        if let Some(label) = bindings.label() {
-            entries.push((label, Cow::Borrowed(action.description())));
+        let Some(&(set, description)) =
+            DIRECTION_SETS.iter().find(|(set, _)| set.contains(&action))
+        else {
+            if let Some(label) = bindings.label() {
+                entries.push((label, Cow::Borrowed(action.description())));
+            }
+            continue;
+        };
+        if set[0] != action {
+            continue;
+        }
+        let labels = super::keybindings::flat_action_bindings(keybinds)
+            .filter(|(_, member)| set.contains(member))
+            .filter_map(|(bindings, _)| bindings.label())
+            .collect::<Vec<_>>();
+        if !labels.is_empty() {
+            entries.push((join_direction_labels(&labels), Cow::Borrowed(description)));
         }
     }
     for (bindings, description) in [
@@ -219,6 +296,32 @@ pub(crate) fn filter_keybind_help_groups(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn direction_labels_share_everything_but_the_last_key() {
+        let join = |labels: &[&str]| {
+            super::join_direction_labels(
+                &labels
+                    .iter()
+                    .map(|label| label.to_string())
+                    .collect::<Vec<_>>(),
+            )
+        };
+        assert_eq!(join(&["prefix+h", "prefix+j"]), "prefix+h/j");
+        assert_eq!(
+            join(&["prefix+shift+h", "prefix+shift+l"]),
+            "prefix+shift+h/l"
+        );
+        assert_eq!(join(&["h", "l"]), "h/l");
+        assert_eq!(
+            join(&["prefix+tab", "prefix+shift+tab"]),
+            "prefix+tab / prefix+shift+tab"
+        );
+        assert_eq!(
+            join(&["prefix+h / ctrl+alt+h", "prefix+l"]),
+            "prefix+h / ctrl+alt+h / prefix+l"
+        );
+    }
+
     use super::*;
 
     fn groups() -> Vec<KeybindHelpGroup> {

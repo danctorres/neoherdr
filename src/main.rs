@@ -153,6 +153,7 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # next_tab = "prefix+]"
 # move_tab_previous = "prefix+{"
 # move_tab_next = "prefix+}"
+# new_tab = "prefix+n"
 # switch_tab = "prefix+1..9"
 # switch_workspace = ""   # optional indexed binding, e.g. "prefix+shift+1..9"
 # focus_agent = ""        # optional indexed binding, e.g. "prefix+alt+1..9"
@@ -180,14 +181,14 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # remote_image_paste = "ctrl+v" # only active in herdr --remote; empty disables raw-key image paste
 
 # Menu openers. Inside a menu, n is new, r rename, x close or remove, s switch.
-# workspace_menu = "prefix+w" # n new, r rename, x close, s switch, j/k next/previous, g expand/collapse group
+# workspace_menu = "prefix+w" # n new, r rename, x close, s switch, j/k next/previous, J/K move, g expand/collapse group
 # tab_menu = "prefix+t"       # n new, r rename, x close, h/l previous/next, H/L move
-# pane_menu = "prefix+p"      # r rename, c clear name, x close, z zoom, \ / - split, s swap, p last, e edit scrollback, k clear, y copy mode
+# pane_menu = "prefix+p"      # \ / - split, x close, z zoom, ; last, : swap with last, r rename, R clear name, e edit scrollback, c clear, y copy mode
 # agent_menu = "prefix+a"     # n new agent tab, a jump to notification, j/k next/previous agent
 # git_menu = "prefix+g"       # n new worktree, o open worktree, x remove worktree
-# system_menu = "prefix+s"    # s settings, r reload config, b toggle sidebar, ? keybinds, q detach
+# system_menu = "prefix+s"    # , settings, r reload config, b toggle sidebar, ? keybinds, q detach
 # tui_menu = "prefix+o"       # the [[tui]] entries below
-# Any menu action can also get its own binding, e.g. new_tab = "prefix+c".
+# Any menu action can also get its own binding, e.g. rename_tab = "prefix+comma".
 
 # Navigate-mode movement. These local shortcuts win while navigate mode is open.
 # They are independent from focus_pane_*. Do not include prefix+, esc, enter, tab, or 1..9 here.

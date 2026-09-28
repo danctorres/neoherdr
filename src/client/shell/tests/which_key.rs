@@ -120,7 +120,11 @@ fn entering_prefix_populates_hint_when_enabled() {
         ("a", "+agent"),
         ("g", "+git"),
         ("s", "+system"),
-        ("h", "focus pane left"),
+        ("h/j/k/l", "focus pane"),
+        ("shift+h/j/k/l", "swap pane"),
+        ("[/]", "previous / next tab"),
+        ("tab / shift+tab", "cycle pane"),
+        ("n", "new tab"),
         ("?", "keybinds"),
     ] {
         assert!(

@@ -345,7 +345,7 @@ pub struct KeysConfig {
     pub show_which_key: bool,
     /// Open keybinding help. Default: "prefix+?"
     pub help: BindingConfig,
-    /// Open settings. Unset by default; reachable as `s s` in the system menu.
+    /// Open settings. Unset by default; reachable as `s ,` in the system menu.
     pub settings: BindingConfig,
     /// Create a new workspace. Unset by default; reachable as `w n` in the workspace menu.
     pub new_workspace: BindingConfig,
@@ -393,7 +393,7 @@ pub struct KeysConfig {
     pub focus_agent: BindingConfig,
     /// Local-client shortcut that sends a clipboard image to a remote Herdr session. Default: "ctrl+v".
     pub remote_image_paste: String,
-    /// Create a new tab in the active workspace. Unset by default; reachable as `t n` in the tab menu.
+    /// Create a new tab in the active workspace. Default: "prefix+n"; also `t n` in the tab menu.
     pub new_tab: BindingConfig,
     /// Rename the active tab. Unset by default; reachable as `t r` in the tab menu.
     pub rename_tab: BindingConfig,
@@ -405,6 +405,10 @@ pub struct KeysConfig {
     pub move_tab_previous: BindingConfig,
     /// Move the active tab one position toward the back. Default: "prefix+}"
     pub move_tab_next: BindingConfig,
+    /// Move the selected workspace (with its worktree group) one row up the sidebar. Unset by default; reachable as `w K` in the workspace menu.
+    pub move_workspace_previous: BindingConfig,
+    /// Move the selected workspace (with its worktree group) one row down the sidebar. Unset by default; reachable as `w J` in the workspace menu.
+    pub move_workspace_next: BindingConfig,
     /// Switch to tab 1-9. Default: "prefix+1..9".
     pub switch_tab: BindingConfig,
     /// Switch to workspace 1-9 from prefix mode. Unset by default.
@@ -415,7 +419,7 @@ pub struct KeysConfig {
     pub rename_pane: BindingConfig,
     /// Open the focused pane scrollback in $EDITOR. Unset by default; reachable as `p e` in the pane menu.
     pub edit_scrollback: BindingConfig,
-    /// Clear the focused pane screen and scrollback. Unset by default; reachable as `p k` in the pane menu.
+    /// Clear the focused pane screen and scrollback. Unset by default; reachable as `p c` in the pane menu.
     pub clear_pane: BindingConfig,
     /// Enter keyboard copy mode for the focused pane. Default: "prefix+y" (vim yank).
     pub copy_mode: BindingConfig,
@@ -464,22 +468,22 @@ pub struct KeysConfig {
     pub toggle_sidebar: BindingConfig,
     /// Expand or collapse the selected workspace group. Unset by default; reachable as `w g` in the workspace menu.
     pub toggle_group: BindingConfig,
-    /// Clear the focused pane's custom name. Unset by default; reachable as `p c` in the pane menu.
+    /// Clear the focused pane's custom name. Unset by default; reachable as `p R` in the pane menu.
     pub clear_pane_name: BindingConfig,
-    /// Swap the selected pane with the focused pane. Unset by default; reachable as `p s` in the pane menu.
+    /// Swap the focused pane with the last focused pane. Unset by default; reachable as `p :` in the pane menu.
     pub swap_with_focused_pane: BindingConfig,
     /// Optional indexed shortcuts expanded over number keys 1-9.
     pub indexed: IndexedKeysConfig,
     /// Prefix-mode custom command bindings.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub command: Vec<CommandKeybindConfig>,
-    /// Open the workspace menu (new, rename, close, switch, next/previous). Default: "prefix+w"
+    /// Open the workspace menu (new, rename, close, switch, next/previous, move, group). Default: "prefix+w"
     pub workspace_menu: BindingConfig,
     /// Open the tab menu (new, rename, close, next/previous, move). Default: "prefix+t"
     pub tab_menu: BindingConfig,
-    /// Open the pane menu (rename, clear name, split, close, zoom, scrollback, copy, swap). Default: "prefix+p"
+    /// Open the pane menu (split, close, zoom, last, swap, rename, scrollback, clear, copy). Default: "prefix+p"
     pub pane_menu: BindingConfig,
-    /// Open the agent menu (jump to notification target, next/previous agent). Default: "prefix+a"
+    /// Open the agent menu (new agent tab, jump to notification target, next/previous agent). Default: "prefix+a"
     pub agent_menu: BindingConfig,
     /// Open the git menu (new, open, and remove worktrees, plus bundled worktree plugins). Default: "prefix+g"
     pub git_menu: BindingConfig,
@@ -560,6 +564,10 @@ pub(crate) struct KeysConfigOverlay {
     move_tab_previous: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     move_tab_next: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    move_workspace_previous: Option<BindingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    move_workspace_next: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     switch_tab: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -701,6 +709,8 @@ impl<'de> Deserialize<'de> for KeysConfig {
         apply_field!(next_tab);
         apply_field!(move_tab_previous);
         apply_field!(move_tab_next);
+        apply_field!(move_workspace_previous);
+        apply_field!(move_workspace_next);
         apply_field!(switch_tab);
         apply_field!(switch_workspace);
         apply_field!(close_tab);
@@ -817,6 +827,8 @@ impl KeysConfig {
         copy_effective_action_field!(next_tab, keybinds.next_tab);
         copy_effective_action_field!(move_tab_previous, keybinds.move_tab_previous);
         copy_effective_action_field!(move_tab_next, keybinds.move_tab_next);
+        copy_effective_action_field!(move_workspace_previous, keybinds.move_workspace_previous);
+        copy_effective_action_field!(move_workspace_next, keybinds.move_workspace_next);
         copy_effective_indexed_field!(switch_tab, keybinds.switch_tab);
         copy_effective_indexed_field!(switch_workspace, keybinds.switch_workspace);
         copy_effective_action_field!(close_tab, keybinds.close_tab);
@@ -1191,12 +1203,14 @@ impl Default for KeysConfig {
             next_agent: BindingConfig::empty(),
             focus_agent: BindingConfig::empty(),
             remote_image_paste: "ctrl+v".into(),
-            new_tab: BindingConfig::empty(),
+            new_tab: BindingConfig::one("prefix+n"),
             rename_tab: BindingConfig::empty(),
             previous_tab: BindingConfig::one("prefix+["),
             next_tab: BindingConfig::one("prefix+]"),
             move_tab_previous: BindingConfig::one("prefix+{"),
             move_tab_next: BindingConfig::one("prefix+}"),
+            move_workspace_previous: BindingConfig::empty(),
+            move_workspace_next: BindingConfig::empty(),
             switch_tab: BindingConfig::one("prefix+1..9"),
             switch_workspace: BindingConfig::empty(),
             close_tab: BindingConfig::empty(),
