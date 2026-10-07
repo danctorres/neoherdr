@@ -10,7 +10,10 @@ keep config, state, and sockets under `neoherdr` (for example
 `~/.config/neoherdr`), so the fork runs beside an upstream herdr install.
 
 Subcommands, `HERDR_*` environment variables, and help text keep upstream's
-`herdr` spelling. Debug builds keep upstream's `herdr-dev` directory, and
+`herdr` spelling; `--help` opens with a line saying to type `neoherdr`.
+Panes get a `herdr` link to this binary appended to `PATH`
+(`<config dir>/bin`), so agents that call `herdr` work without upstream
+installed. POSIX SSH remotes receive `~/.local/bin/neoherdr`. Debug builds keep upstream's `herdr-dev` directory, and
 `build.rs` aliases `CARGO_BIN_EXE_herdr` to the `neoherdr` binary, so
 upstream's tests stay byte-identical.
 
