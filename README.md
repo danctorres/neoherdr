@@ -55,15 +55,15 @@ neoherdr has no prebuilt binaries or package-manager releases; the herdr.dev ins
 cargo install --locked --git https://github.com/danctorres/neoherdr
 ```
 
-this installs the `herdr` command. `herdr update` does not download anything in this fork; rerun the command above to update. ssh remotes receive the local binary.
+this installs the `neoherdr` command, which keeps its config, sessions, and sockets in `~/.config/neoherdr`. upstream herdr can stay installed beside it: the two share nothing. everything else is spelled as upstream spells it (subcommands, `HERDR_*` variables, config keys), so upstream's docs apply with `neoherdr` in place of `herdr`. `neoherdr update` does not download anything in this fork; rerun the command above to update. ssh remotes receive the local binary.
 
 then start it where the work lives:
 
 ```bash
-herdr
+neoherdr
 ```
 
-run your agents, split panes, walk away. `ctrl+b q` detaches, `herdr` reattaches. [quick start →](https://herdr.dev/docs/quick-start/)
+run your agents, split panes, walk away. `ctrl+b q` detaches, `neoherdr` reattaches. [quick start →](https://herdr.dev/docs/quick-start/)
 
 ## docs
 
@@ -88,7 +88,7 @@ cargo build --release   # or plain `cargo build` for a faster debug build
 run what you built:
 
 ```bash
-./target/release/herdr
+./target/release/neoherdr
 ```
 
 if you are already inside a herdr session, clear the inherited socket overrides so the new binary talks to its own dev server instead of the running one:

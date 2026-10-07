@@ -21,7 +21,7 @@ include = [
 ]
 
 [[bin]]
-name = "herdr"
+name = "neoherdr"
 path = "src/main.rs"
 
 [workspace]
