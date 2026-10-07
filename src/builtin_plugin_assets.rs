@@ -13,7 +13,10 @@ type BundledPlugin = (
 const PLUGINS: &[BundledPlugin] = &[(
     "worktrunk",
     include_str!("../plugins/worktrunk/herdr-plugin.toml"),
-    &[("open", include_str!("../plugins/worktrunk/bin/open"))],
+    &[
+        ("open", include_str!("../plugins/worktrunk/bin/open")),
+        ("run", include_str!("../plugins/worktrunk/bin/run")),
+    ],
 )];
 
 /// Default which-key entries for bundled plugin actions, as
@@ -151,8 +154,11 @@ fn assert_plugin_assets(id: &str, action_ids: &[&str]) {
         .map(|entry| entry["id"].as_str().expect("entry id"))
         .collect::<Vec<_>>();
     assert_eq!(ids, action_ids);
-    for (_, contents) in files_for(id) {
-        assert!(contents.contains("plugin pane open"));
+    for (name, contents) in files_for(id) {
+        // `open` is the action script; the rest run inside the panes.
+        if *name == "open" {
+            assert!(contents.contains("plugin pane open"));
+        }
         // Bundled scripts must run with only a POSIX shell.
         assert!(!contents.contains("python"));
     }
@@ -165,6 +171,31 @@ mod tests {
     #[test]
     fn embedded_manifest_contains_builtin_entrypoints() {
         assert_plugin_assets("worktrunk", &["switch", "list", "remove", "merge"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn worktrunk_pane_reports_a_missing_wt_instead_of_failing_silently() {
+        use std::io::Write;
+
+        // An empty PATH hides wt and every installer, so the script can only
+        // explain and wait for Enter.
+        let mut child = std::process::Command::new("/bin/sh")
+            .arg(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/plugins/worktrunk/bin/run"
+            ))
+            .arg("list")
+            .env("PATH", "")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(b"\n").unwrap();
+        let output = child.wait_with_output().unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("wt) is not installed"), "{stdout}");
+        assert_eq!(output.status.code(), Some(127), "{stdout}");
     }
 
     #[test]
@@ -260,20 +291,12 @@ mod tests {
 
     #[test]
     fn worktrunk_switch_pane_opens_and_focuses_space() {
-        let manifest: toml::Value = manifest_for("worktrunk").parse().expect("manifest");
-        let switch = manifest["panes"]
-            .as_array()
-            .expect("panes")
+        // Every pane runs the shared `run` script, which holds the wt calls.
+        let command = files_for("worktrunk")
             .iter()
-            .find(|pane| pane["id"].as_str() == Some("switch"))
-            .expect("switch pane");
-        let command = switch["command"]
-            .as_array()
-            .expect("command")
-            .iter()
-            .filter_map(|part| part.as_str())
-            .collect::<Vec<_>>()
-            .join(" ");
+            .find(|(name, _)| *name == "run")
+            .expect("run script")
+            .1;
         assert!(command.contains("wt switch"), "{command}");
         assert!(command.contains("worktree open"), "{command}");
         assert!(command.contains("--focus"), "{command}");

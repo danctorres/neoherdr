@@ -1,0 +1,54 @@
+#!/bin/sh
+# worktrunk pane: run `wt <subcommand>` in the popup. When wt is missing, say
+# so and offer to install it. Interaction is otherwise left to wt's own CLI.
+set -u
+sub="${1:?usage: run <switch|list|remove|merge>}"
+
+hold() {
+  printf '\n%sPress Enter to close.\n' "$1"
+  IFS= read -r _ || true
+}
+
+if ! command -v wt >/dev/null 2>&1; then
+  if command -v brew >/dev/null 2>&1; then
+    install="brew install worktrunk"
+  elif command -v cargo >/dev/null 2>&1; then
+    install="cargo install worktrunk"
+  else
+    install=""
+  fi
+  printf 'worktrunk (wt) is not installed: https://worktrunk.dev\n'
+  if [ -z "$install" ]; then
+    hold 'Install it, then try again. '
+    exit 127
+  fi
+  printf '\nInstall it now with "%s"? [y/N] ' "$install"
+  IFS= read -r answer || answer=
+  case "$answer" in
+    y | Y | yes) ;;
+    *) exit 0 ;;
+  esac
+  if ! $install; then
+    hold '[worktrunk] install failed. '
+    exit 1
+  fi
+  if ! command -v wt >/dev/null 2>&1; then
+    hold '[worktrunk] installed, but wt is not on PATH yet. '
+    exit 127
+  fi
+  printf '\n'
+fi
+
+case "$sub" in
+  # wt fills in the braces; the fork's binary opens the chosen worktree.
+  switch) wt switch -x "${HERDR_BIN_PATH:-herdr}" -- worktree open --cwd '{{ repo_path }}' --path '{{ worktree_path }}' --focus ;;
+  *) wt "$sub" ;;
+esac
+code=$?
+if [ "$code" -ne 0 ]; then
+  hold "[worktrunk] wt $sub failed with exit code $code. "
+elif [ "$sub" = list ]; then
+  # wt list prints and exits, so hold the popup open for reading.
+  hold ''
+fi
+exit "$code"

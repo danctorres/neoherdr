@@ -40,7 +40,7 @@ description = "Interactive wt switch picker"
 placement = "popup"
 width = "90%"
 height = "90%"
-command = ['sh', '-c', '''wt switch -x "${HERDR_BIN_PATH:-herdr}" -- worktree open --cwd '{{ repo_path }}' --path '{{ worktree_path }}' --focus; code=$?; if [ "$code" -ne 0 ]; then printf "\n[worktrunk] wt switch failed with exit code %s. Press Enter to close.\n" "$code"; IFS= read -r _ || true; fi; exit "$code"''']
+command = ['sh', '-c', 'exec sh "$HERDR_PLUGIN_ROOT/bin/run" switch']
 
 [[panes]]
 id = "list"
@@ -49,7 +49,7 @@ description = "wt worktree status table"
 placement = "popup"
 width = "90%"
 height = "90%"
-command = ['sh', '-c', 'wt list; code=$?; if [ "$code" -ne 0 ]; then printf "\n[worktrunk] wt list failed with exit code %s." "$code"; fi; printf "\nPress Enter to close.\n"; IFS= read -r _ || true; exit "$code"']
+command = ['sh', '-c', 'exec sh "$HERDR_PLUGIN_ROOT/bin/run" list']
 
 [[panes]]
 id = "remove"
@@ -58,7 +58,7 @@ description = "wt worktree removal with its own approval prompt"
 placement = "popup"
 width = "90%"
 height = "90%"
-command = ['sh', '-c', 'wt remove; code=$?; if [ "$code" -ne 0 ]; then printf "\n[worktrunk] wt remove failed with exit code %s. Press Enter to close.\n" "$code"; IFS= read -r _ || true; fi; exit "$code"']
+command = ['sh', '-c', 'exec sh "$HERDR_PLUGIN_ROOT/bin/run" remove']
 
 [[panes]]
 id = "merge"
@@ -67,4 +67,4 @@ description = "wt merge workflow with its own prompts"
 placement = "popup"
 width = "90%"
 height = "90%"
-command = ['sh', '-c', 'wt merge; code=$?; if [ "$code" -ne 0 ]; then printf "\n[worktrunk] wt merge failed with exit code %s. Press Enter to close.\n" "$code"; IFS= read -r _ || true; fi; exit "$code"']
+command = ['sh', '-c', 'exec sh "$HERDR_PLUGIN_ROOT/bin/run" merge']

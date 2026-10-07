@@ -9,7 +9,8 @@ opens and focuses the chosen checkout as a Herdr space.
 
 ## Requirements
 
-- `wt` installed and on your `$PATH`
+- `wt` on your `$PATH`. Without it, each action says so and offers to
+  install it with Homebrew or cargo, whichever is present
 - Linux or macOS
 - Herdr 0.9.0 or newer
 
@@ -20,7 +21,7 @@ worktrunk` hides its menu entries; `herdr plugin unlink worktrunk` removes it
 for good. To bring it back, link it again:
 
 ```bash
-herdr plugin link ~/.config/herdr/plugins/builtin/worktrunk
+neoherdr plugin link ~/.config/neoherdr/plugins/builtin/worktrunk
 ```
 
 ## Keybindings
