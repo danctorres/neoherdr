@@ -245,6 +245,55 @@ fn escape_in_a_menu_returns_to_the_top_level_menu() {
 }
 
 #[test]
+fn every_builtin_menu_leaves_without_dispatching() {
+    let mut state = state_with_which_key(true);
+    // Read from the resolved keymap so a menu added later is covered too.
+    let openers = state
+        .config
+        .keybinds
+        .keybinds
+        .groups
+        .iter()
+        .filter_map(|group| {
+            let (code, modifiers) = group.opener.bindings.first()?.trigger.combo();
+            Some((
+                group.id.clone(),
+                crate::input::TerminalKey::new(code, modifiers),
+            ))
+        })
+        .collect::<Vec<_>>();
+    assert!(openers.len() >= 6, "{openers:?}");
+
+    for (id, opener) in openers {
+        let open = |state: &mut ClientShellState| {
+            press(state, prefix_key());
+            press(state, opener.clone());
+            assert_eq!(state.active_key_group.as_deref(), Some(id.as_str()));
+        };
+
+        // Esc steps back to the top-level menu.
+        open(&mut state);
+        let input = press(&mut state, plain_key(crossterm::event::KeyCode::Esc));
+        assert!(input.actions.is_empty(), "{id}: {:?}", input.actions);
+        assert_eq!(state.mode, ClientShellMode::Prefix, "{id}");
+        assert_eq!(state.active_key_group, None, "{id}");
+        press(&mut state, plain_key(crossterm::event::KeyCode::Esc));
+        assert_eq!(state.mode, ClientShellMode::Terminal, "{id}");
+
+        // A key the menu does not bind, and a repeated prefix, both leave
+        // prefix mode.
+        for key in [plain_key(crossterm::event::KeyCode::F(12)), prefix_key()] {
+            open(&mut state);
+            let input = press(&mut state, key);
+            assert!(input.actions.is_empty(), "{id}: {:?}", input.actions);
+            assert_eq!(state.mode, ClientShellMode::Terminal, "{id}");
+            assert_eq!(state.active_key_group, None, "{id}");
+            assert!(state.key_hint.is_none(), "{id}");
+        }
+    }
+}
+
+#[test]
 fn entering_prefix_skips_hint_when_disabled() {
     let mut state = state_with_which_key(false);
     press(&mut state, prefix_key());
