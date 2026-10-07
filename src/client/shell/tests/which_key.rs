@@ -424,6 +424,9 @@ fn key_hint_renders_when_visible_and_not_otherwise() {
     let frame = shown.compose(100, 30).expect("submenu frame");
     let text = frame_text(&frame);
     assert!(text.contains("workspace · esc back"), "{text}");
+    // The status bar stops advertising top-level keys inside a menu.
+    assert!(text.contains("PREFIX  esc back"), "{text}");
+    assert!(!text.contains("send prefix"), "{text}");
     assert!(text.contains("n        new workspace"), "{text}");
     assert!(text.contains("shift+j  move workspace down"), "{text}");
 
