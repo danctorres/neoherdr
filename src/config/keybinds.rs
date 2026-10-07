@@ -1167,7 +1167,11 @@ impl Config {
                     command: format!("tui:{}", tui.id),
                     argv: Some(tui.command.clone()),
                     action_type,
-                    description: tui.description.clone().or_else(|| Some(tui.title.clone())),
+                    // The title leads so the menu names the program it opens.
+                    description: Some(match &tui.description {
+                        Some(description) => format!("{}: {description}", tui.title),
+                        None => tui.title.clone(),
+                    }),
                     width,
                     height,
                     group: Some(TUI_GROUP.into()),
