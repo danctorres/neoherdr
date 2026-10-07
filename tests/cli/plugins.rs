@@ -604,7 +604,13 @@ fn plugin_update_does_not_resurrect_a_plugin_unlinked_during_build() {
         &runtime_dir,
         &["--session", "race", "plugin", "list", "--json"],
     );
-    assert!(listed["result"]["plugins"].as_array().unwrap().is_empty());
+    let remaining = listed["result"]["plugins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|plugin| plugin["plugin_id"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(remaining, ["worktrunk"], "only the bundled plugin remains");
     assert!(
         fs::read_to_string(managed_path.join("plugin/herdr-plugin.toml"))
             .unwrap()
