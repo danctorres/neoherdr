@@ -739,7 +739,8 @@ fn main() -> io::Result<()> {
 
     if args.iter().any(|a| a == "--version" || a == "-V") {
         platform::begin_cli_output();
-        println!("herdr {}", crate::build_info::version());
+        // Same command, different build: say so, since both install as `herdr`.
+        println!("herdr {} (neoherdr)", crate::build_info::version());
         return Ok(());
     }
 
