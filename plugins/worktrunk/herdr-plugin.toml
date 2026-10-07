@@ -49,7 +49,7 @@ description = "wt worktree status table"
 placement = "popup"
 width = "90%"
 height = "90%"
-command = ['sh', '-c', 'wt list; code=$?; if [ "$code" -ne 0 ]; then printf "\n[worktrunk] wt list failed with exit code %s. Press Enter to close.\n" "$code"; IFS= read -r _ || true; fi; exit "$code"']
+command = ['sh', '-c', 'wt list; code=$?; if [ "$code" -ne 0 ]; then printf "\n[worktrunk] wt list failed with exit code %s." "$code"; fi; printf "\nPress Enter to close.\n"; IFS= read -r _ || true; exit "$code"']
 
 [[panes]]
 id = "remove"

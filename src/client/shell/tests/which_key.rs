@@ -169,7 +169,10 @@ fn tui_binding_is_discoverable_in_prefix_hint() {
     press(&mut state, plain_key(crossterm::event::KeyCode::Char('o')));
     assert_eq!(
         state.key_hint.expect("TUI submenu").bindings,
-        vec![("g".into(), std::borrow::Cow::Borrowed("open git UI"))]
+        vec![(
+            "g".into(),
+            std::borrow::Cow::Borrowed("Git UI: open git UI")
+        )]
     );
 }
 
@@ -185,7 +188,7 @@ fn tui_key_is_local_to_its_menu() {
     assert_eq!(state.active_key_group.as_deref(), Some("open"));
     assert_eq!(
         state.key_hint.expect("TUI submenu").bindings,
-        vec![("f".into(), std::borrow::Cow::Borrowed("open yazi"))]
+        vec![("f".into(), std::borrow::Cow::Borrowed("yazi: open yazi"))]
     );
 }
 

@@ -65,7 +65,7 @@ to choose another opener.
 | `id` | yes | Stable identifier: letters, digits, `.`, `_`, `-`. Unique across entries. |
 | `key` | yes | One key, local to the `open` menu (no `prefix+` or modifiers). |
 | `title` | yes | Label shown in which-key and help. |
-| `description` | no | Longer text shown in help. |
+| `description` | no | Longer text shown after the title, as `title: description`. |
 | `command` | yes | Argv list, for example `["gh", "dash"]`. Quoted and passed unchanged, with no shell expansion. |
 | `type` | no | `"popup"` (default) or `"tab"`. |
 | `width`, `height` | no | Popup size in cells or percent, for example `"95%"`. Each defaults to `"90%"`. |
