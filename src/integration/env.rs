@@ -28,8 +28,42 @@ pub(crate) const HERMES_HOME_ENV_VAR: &str = "HERMES_HOME";
 pub(crate) fn apply_pane_base_env(cmd: &mut CommandBuilder) {
     cmd.env(crate::api::SOCKET_PATH_ENV_VAR, crate::api::socket_path());
     if let Ok(executable) = crate::platform::launch_executable() {
+        // Unit tests must not link into the real config directory.
+        #[cfg(all(unix, not(test)))]
+        if let Some(path) = path_with_herdr_fallback(
+            cmd.get_env("PATH"),
+            &crate::config::config_dir().join("bin"),
+            &executable,
+        ) {
+            cmd.env("PATH", path);
+        }
         cmd.env("HERDR_BIN_PATH", executable);
     }
+}
+
+/// `path` with a directory appended that answers the name `herdr` with this
+/// binary. The fork installs as `neoherdr`, but agents and the herdr skill
+/// call `herdr`; last on `PATH`, the link only applies when no other `herdr`
+/// is installed. `None` when the link cannot be made.
+#[cfg(unix)]
+fn path_with_herdr_fallback(
+    path: Option<&std::ffi::OsStr>,
+    dir: &std::path::Path,
+    executable: &std::path::Path,
+) -> Option<std::ffi::OsString> {
+    let link = dir.join("herdr");
+    if std::fs::read_link(&link).ok().as_deref() != Some(executable) {
+        std::fs::create_dir_all(dir).ok()?;
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(executable, &link).ok()?;
+    }
+    let mut entries = path
+        .map(|path| std::env::split_paths(path).collect::<Vec<_>>())
+        .unwrap_or_default();
+    if !entries.iter().any(|entry| entry == dir) {
+        entries.push(dir.to_path_buf());
+    }
+    std::env::join_paths(entries).ok()
 }
 
 pub(crate) fn pi_extension_dir() -> io::Result<PathBuf> {
@@ -289,5 +323,39 @@ mod tests {
             Some(value) => std::env::set_var("XDG_STATE_HOME", value),
             None => std::env::remove_var("XDG_STATE_HOME"),
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod herdr_fallback_tests {
+    use super::path_with_herdr_fallback;
+    use std::ffi::OsStr;
+    use std::path::Path;
+
+    #[test]
+    fn appends_a_herdr_link_after_the_existing_path() {
+        let dir = std::env::temp_dir().join(format!(
+            "herdr-fallback-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let executable = Path::new("/opt/fork/neoherdr");
+
+        let path = path_with_herdr_fallback(Some(OsStr::new("/usr/bin:/bin")), &dir, executable)
+            .expect("fallback path");
+        let entries = std::env::split_paths(&path).collect::<Vec<_>>();
+        assert_eq!(
+            entries,
+            [Path::new("/usr/bin"), Path::new("/bin"), dir.as_path()]
+        );
+        assert_eq!(std::fs::read_link(dir.join("herdr")).unwrap(), executable);
+
+        // A moved binary repoints the link, and the directory is not added twice.
+        let moved = Path::new("/opt/fork/v2/neoherdr");
+        let again = path_with_herdr_fallback(Some(&path), &dir, moved).expect("fallback path");
+        assert_eq!(again, path);
+        assert_eq!(std::fs::read_link(dir.join("herdr")).unwrap(), moved);
+
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

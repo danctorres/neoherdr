@@ -1,6 +1,6 @@
 # neoherdr
 
-> **neoherdr is a fork of [herdr](https://github.com/herdrdev/herdr) with a different philosophy: keyboard-first instead of mouse-first.** Every action is reachable and discoverable through a prefix/which-key keymap; the mouse stays supported as a secondary input path, not the primary design target. The CLI binary and command are still called `herdr` and config/protocol stay compatible; `neoherdr` names this fork's package and repository, not the tool you type.
+> **neoherdr is a fork of [herdr](https://github.com/herdrdev/herdr) with a different philosophy: keyboard-first instead of mouse-first.** Every action is reachable and discoverable through a prefix/which-key keymap; the mouse stays supported as a secondary input path, not the primary design target. The command is `neoherdr`, with its own config directory, so it installs and runs beside upstream herdr; subcommands, config format, and protocol stay compatible.
 
 <p align="center">
   <img src="assets/logo.png" alt="herdr" width="100" />
@@ -29,6 +29,8 @@
 - **configured tuis** — declare `[[tui]]` entries in `config.toml` and open them from `prefix+o`. [configuration →](docs/next/website/src/content/docs/configuration.mdx)
 - **failed panes stay open** — an agent or tui that exits with an error keeps its output on screen until you press enter.
 - **launching through your shell** — agents and tuis start through your interactive shell, so rc-file `PATH` and exported keys reach them.
+- **bundled worktrunk** — `prefix+g` then `s`, `l`, or `m` drives the [`wt`](https://worktrunk.dev) worktree cli; without `wt`, the popup offers to install it.
+- **runs beside upstream** — the command is `neoherdr` and its config, sessions, and sockets live in `~/.config/neoherdr`.
 
 everything else is upstream herdr.
 
@@ -55,7 +57,7 @@ neoherdr has no prebuilt binaries or package-manager releases; the herdr.dev ins
 cargo install --locked --git https://github.com/danctorres/neoherdr
 ```
 
-this installs the `neoherdr` command, which keeps its config, sessions, and sockets in `~/.config/neoherdr`. upstream herdr can stay installed beside it: the two share nothing. everything else is spelled as upstream spells it (subcommands, `HERDR_*` variables, config keys), so upstream's docs apply with `neoherdr` in place of `herdr`. `neoherdr update` does not download anything in this fork; rerun the command above to update. ssh remotes receive the local binary.
+this installs the `neoherdr` command, which keeps its config, sessions, and sockets in `~/.config/neoherdr`. upstream herdr can stay installed beside it: the two share nothing. everything else is spelled as upstream spells it (subcommands, `HERDR_*` variables, config keys), so upstream's docs apply with `neoherdr` in place of `herdr`. `neoherdr update` does not download anything in this fork; rerun the command above to update. ssh remotes receive the local binary as `~/.local/bin/neoherdr`. inside a neoherdr pane, `herdr` still works: it resolves to upstream herdr when that is installed, otherwise to neoherdr itself.
 
 then start it where the work lives:
 
@@ -67,7 +69,7 @@ run your agents, split panes, walk away. `ctrl+b q` detaches, `neoherdr` reattac
 
 ## docs
 
-the keymap and configuration differ from upstream, so read this fork's pages in the repo: [keyboard](docs/next/website/src/content/docs/keyboard.mdx) · [configuration](docs/next/website/src/content/docs/configuration.mdx). inside herdr, `prefix` opens the which-key menu and `prefix ?` shows every binding.
+the keymap and configuration differ from upstream, so read this fork's pages in the repo: [keyboard](docs/next/website/src/content/docs/keyboard.mdx) · [configuration](docs/next/website/src/content/docs/configuration.mdx). inside neoherdr, `prefix` opens the which-key menu and `prefix ?` shows every binding.
 
 everything else is shared with upstream at [herdr.dev/docs](https://herdr.dev/docs/): [quick start](https://herdr.dev/docs/quick-start/) · [concepts](https://herdr.dev/docs/concepts/) · [supported agents](https://herdr.dev/docs/agents/) · [session state](https://herdr.dev/docs/session-state/) · [connecting machines](https://herdr.dev/docs/connecting-machines/) · [remote](https://herdr.dev/docs/persistence-remote/) · [integrations](https://herdr.dev/docs/integrations/) · [plugins](https://herdr.dev/docs/plugins/) · [socket api](https://herdr.dev/docs/socket-api/)
 

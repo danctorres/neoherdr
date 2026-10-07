@@ -477,7 +477,7 @@ impl RemoteHerdr {
                 RemoteExecutable::WindowsPath("herdr.exe".to_string()),
             )
         } else {
-            let install_suffix = ".local/bin/herdr".to_string();
+            let install_suffix = format!(".local/bin/{REMOTE_BINARY_NAME}");
             let shell_path = format!("\"$HOME/{install_suffix}\"");
             (install_suffix, RemoteExecutable::PosixShellPath(shell_path))
         };
@@ -1692,7 +1692,17 @@ emit() {
     fi
 }
 if [ -n "$home" ]; then
-    emit "$home/.local/bin/herdr"
+"#,
+    );
+    // The fork's own install comes first; upstream's locations stay as
+    // fallbacks for remotes that only have upstream herdr.
+    if REMOTE_BINARY_NAME != "herdr" {
+        script.push_str(&format!(
+            "    emit \"$home/.local/bin/{REMOTE_BINARY_NAME}\"\n"
+        ));
+    }
+    script.push_str(
+        r#"    emit "$home/.local/bin/herdr"
 fi
 "#,
     );
@@ -1730,7 +1740,7 @@ fn remote_binary_on_path_any(
     ssh: &RemoteSsh,
     remote_herdr: &RemoteHerdr,
 ) -> io::Result<Option<RemoteHerdr>> {
-    let output = ssh.posix_user_shell_output("command -v herdr")?;
+    let output = ssh.posix_user_shell_output(&format!("command -v {REMOTE_BINARY_NAME}"))?;
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         if let Some(candidate) = remote_herdr_from_path_discovery(remote_herdr, &stdout) {
@@ -2451,8 +2461,17 @@ fn version_label(version: Option<&str>) -> &str {
     version.unwrap_or("unknown")
 }
 
+/// File name of the binary this build installs on POSIX remotes. Release
+/// builds use the fork's name so an upstream herdr on the same remote is never
+/// overwritten; debug builds keep upstream's so its tests stay untouched.
+const REMOTE_BINARY_NAME: &str = if cfg!(debug_assertions) {
+    "herdr"
+} else {
+    "neoherdr"
+};
+
 fn warn_if_remote_bin_not_on_path(ssh: &RemoteSsh) -> io::Result<()> {
-    let output = ssh.posix_user_shell_output("command -v herdr")?;
+    let output = ssh.posix_user_shell_output(&format!("command -v {REMOTE_BINARY_NAME}"))?;
     if output.status.success()
         && remote_shell_resolves_managed_install(&String::from_utf8_lossy(&output.stdout))
     {
@@ -2460,7 +2479,7 @@ fn warn_if_remote_bin_not_on_path(ssh: &RemoteSsh) -> io::Result<()> {
     }
 
     eprintln!(
-        "herdr: installed remote binary to ~/.local/bin/herdr, but the remote shell does not resolve `herdr` to that path"
+        "herdr: installed remote binary to ~/.local/bin/{REMOTE_BINARY_NAME}, but the remote shell does not resolve `{REMOTE_BINARY_NAME}` to that path"
     );
     Ok(())
 }
@@ -2470,7 +2489,7 @@ fn remote_shell_resolves_managed_install(stdout: &str) -> bool {
         .lines()
         .next()
         .map(str::trim)
-        .is_some_and(|path| path.ends_with("/.local/bin/herdr"))
+        .is_some_and(|path| path.ends_with(&format!("/.local/bin/{REMOTE_BINARY_NAME}")))
 }
 
 fn download_release_asset(platform: &RemotePlatform) -> io::Result<InstallSource> {
