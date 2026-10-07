@@ -24,7 +24,10 @@ pub fn app_dir_name() -> &'static str {
     if cfg!(debug_assertions) {
         "herdr-dev"
     } else {
-        "herdr"
+        // The fork keeps its own config, state, and sockets so it can run
+        // beside an upstream herdr install. Debug builds keep upstream's
+        // `herdr-dev` so its tests stay untouched.
+        "neoherdr"
     }
 }
 
