@@ -4,9 +4,15 @@ This checkout is **neoherdr**, a fork of [herdr](https://github.com/herdrdev/her
 (remote `danctorres/neoherdr`, not the canonical `herdrdev/herdr`) with a
 different design philosophy: keyboard-first instead of mouse-first, every
 action reachable through a discoverable prefix/which-key keymap, mouse kept
-as a secondary path. The CLI binary, command name, config format, and wire
-protocol stay `herdr`-compatible; only the fork's package name and
-repository are `neoherdr`.
+as a secondary path. The config format and wire protocol stay
+`herdr`-compatible. The installed command is `neoherdr` and release builds
+keep config, state, and sockets under `neoherdr` (for example
+`~/.config/neoherdr`), so the fork runs beside an upstream herdr install.
+
+Subcommands, `HERDR_*` environment variables, and help text keep upstream's
+`herdr` spelling. Debug builds keep upstream's `herdr-dev` directory, and
+`build.rs` aliases `CARGO_BIN_EXE_herdr` to the `neoherdr` binary, so
+upstream's tests stay byte-identical.
 
 `AGENTS.md` (imported at the end) is upstream herdr's guide and is kept
 byte-identical to upstream so rebases stay clean. It calls the project
@@ -33,8 +39,8 @@ hypothetical user might someday want.
 - **No users yet.** Fork-only behavior (config files, defaults, bundled
   plugins, fork-added API methods) changes directly to the end state, with no
   migration reads, deprecation diagnostics, or compatibility shims. The
-  upstream-compatibility contracts in `AGENTS.md` (CLI name, config format,
-  wire protocol, frozen generation-1 endpoint codecs) still apply.
+  upstream-compatibility contracts in `AGENTS.md` (config format, wire
+  protocol, frozen generation-1 endpoint codecs) still apply.
 
 ## Sections of AGENTS.md that do not apply here
 
@@ -62,9 +68,9 @@ Ignore these in this checkout:
 - Rebase `master` onto `upstream/master` weekly and before starting a
   non-trivial change, never in the middle of one, then force-push
   `origin/master`.
-- The fork has no update source: `herdr update` does not download anything,
-  and SSH remotes receive the local binary. Build and install with
-  `cargo install --path . --locked`.
+- The fork has no update source: `neoherdr update` does not download
+  anything, and SSH remotes receive the local binary. Build and install with
+  `cargo install --path . --locked`, which installs the `neoherdr` command.
 - Keep upstream-owned files (`AGENTS.md`, `.zed/`, CI workflows, release
   scripts) unchanged unless the fork needs different behavior; every edit to
   them is a permanent rebase conflict.
