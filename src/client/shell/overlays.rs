@@ -182,19 +182,29 @@ pub(crate) fn render_key_hint(
     let shown = hint.bindings.len().min(max_rows.saturating_mul(2).max(1));
     let columns = if hint.bindings.len() > max_rows { 2 } else { 1 };
     let rows = shown.div_ceil(columns);
-    let cell = |(key, label): &(String, std::borrow::Cow<'static, str>)| {
-        display_width(key) + 1 + display_width(label)
-    };
-    let col_width = |col: usize| {
-        (col * rows..((col + 1) * rows).min(shown))
-            .map(|index| cell(&hint.bindings[index]))
+    // Keys are padded to the widest key of their column so labels line up.
+    let column = |col: usize| &hint.bindings[col * rows..((col + 1) * rows).min(shown)];
+    let key_width = |col: usize| {
+        column(col)
+            .iter()
+            .map(|(key, _)| display_width(key))
             .max()
             .unwrap_or(0)
+    };
+    let col_width = |col: usize| {
+        key_width(col)
+            + 2
+            + column(col)
+                .iter()
+                .map(|(_, label)| display_width(label))
+                .max()
+                .unwrap_or(0)
     };
     let width = (0..columns)
         .map(col_width)
         .sum::<u16>()
         .saturating_add(2 * columns as u16 + 2)
+        .max(display_width(&hint.title).saturating_add(4))
         .max(10)
         .min(screen.width.max(1));
     let height = (rows as u16).saturating_add(2).min(screen.height.max(1));
@@ -206,6 +216,14 @@ pub(crate) fn render_key_hint(
         .saturating_add(screen.height.saturating_sub(height + 1));
     let rect = Rect::new(x, y, width, height);
     let inner = panel(buffer, rect, palette.accent, palette.panel_bg)?;
+    put_text(
+        buffer,
+        rect.x.saturating_add(2),
+        rect.y,
+        rect.width.saturating_sub(4),
+        &hint.title,
+        Style::default().fg(palette.accent).bg(palette.panel_bg),
+    );
     let key_style = Style::default()
         .fg(palette.mauve)
         .bg(palette.panel_bg)
@@ -227,7 +245,7 @@ pub(crate) fn render_key_hint(
             continue;
         }
         put_text(buffer, cell_x, row_y, cell_width, key, key_style);
-        let label_x = cell_x.saturating_add(display_width(key) + 1);
+        let label_x = cell_x.saturating_add(key_width(col) + 2);
         let label_width = inner.right().saturating_sub(label_x);
         put_text(buffer, label_x, row_y, label_width, label, label_style);
     }
