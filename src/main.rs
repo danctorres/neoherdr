@@ -622,6 +622,11 @@ fn main() -> io::Result<()> {
         platform::begin_cli_output();
         println!("herdr — terminal workspace manager for AI coding agents");
         println!();
+        println!(
+            "This is neoherdr, a keyboard-first fork. Run every `herdr ...` command below as `{} ...`.",
+            env!("CARGO_BIN_NAME")
+        );
+        println!();
         println!("Usage: herdr [options]");
         println!("       herdr --session <name> [options]");
         println!("       herdr --machine <label-or-id> <command>");
