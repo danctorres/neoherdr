@@ -1025,7 +1025,7 @@ action = "bootstrap"
         let previous_config_home = std::env::var_os("XDG_CONFIG_HOME");
         let base = unique_temp_path("bundled-removal");
         std::env::set_var("XDG_CONFIG_HOME", &base);
-        let restart = || crate::app::load_plugin_registry(true);
+        let restart = || crate::app::load_plugin_registry(true, &mut Default::default());
         let request = |app: &mut App, method| {
             let response = app.handle_api_request(Request {
                 id: "bundled".into(),

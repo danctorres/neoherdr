@@ -635,7 +635,10 @@ impl App {
         let cwd = terminal.cwd.clone();
         let (history, (rows, cols)) = match self.terminal_runtimes.get(&terminal_id) {
             Some(runtime) => (runtime.snapshot_history(), runtime.current_size()),
-            None => (None, self.state.estimate_pane_size()),
+            None => (
+                None,
+                self.state.new_pane_size(crate::ui::NewPanePlacement::Alone),
+            ),
         };
         let argv = crate::platform::exit_notice_argv(&exit_notice_message(&label, exit_status));
         let runtime = match crate::terminal::TerminalRuntime::spawn_argv_command_with_history(

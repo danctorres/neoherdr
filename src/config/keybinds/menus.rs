@@ -455,7 +455,7 @@ mod tests {
         }
         for (title, entries) in crate::input::keybind_help_groups(
             keybinds,
-            (KeyCode::Char('b'), KeyModifiers::CONTROL),
+            &[(KeyCode::Char('b'), KeyModifiers::CONTROL)],
             |_| true,
         ) {
             let _ = writeln!(out, "help {title}");
@@ -912,7 +912,7 @@ action = "rename_tab"
         assert!(keybinds.custom_commands.is_empty());
         let help = crate::input::keybind_help_groups(
             &keybinds,
-            (KeyCode::Char('b'), KeyModifiers::CONTROL),
+            &[(KeyCode::Char('b'), KeyModifiers::CONTROL)],
             |_| true,
         );
         let win = help

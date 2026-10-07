@@ -357,6 +357,7 @@ mod tests {
                 (KeyCode::Char(' '), KeyModifiers::CONTROL),
                 (KeyCode::Char('s'), KeyModifiers::CONTROL),
             ],
+            |_| true,
         );
         let global = &groups[0].1;
         assert_eq!(global[0].0, "ctrl+space / ctrl+s");
