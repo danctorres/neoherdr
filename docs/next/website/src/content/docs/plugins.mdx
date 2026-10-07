@@ -369,7 +369,7 @@ worktrunk's own; the plugin parses no output. It never invokes Herdr's native
 `worktree` commands.
 
 Herdr registers the bundled plugin on start and writes its files to
-`~/.config/herdr/plugins/builtin/worktrunk`. Check its actions:
+`~/.config/neoherdr/plugins/builtin/worktrunk`. Check its actions:
 
 ```bash
 herdr plugin action list --plugin worktrunk
@@ -379,9 +379,11 @@ herdr plugin action list --plugin worktrunk
 entries. `herdr plugin unlink worktrunk` (or `uninstall`) removes it, and
 Herdr stops registering it and refreshing its files on later starts. Linking
 a plugin with the same id brings it back, for example
-`herdr plugin link ~/.config/herdr/plugins/builtin/worktrunk`.
+`herdr plugin link ~/.config/neoherdr/plugins/builtin/worktrunk`.
 
-It requires `wt` on your `PATH` and runs on Linux and macOS. While it is
+It needs `wt` on your `PATH` and runs on Linux and macOS. Without `wt`, each
+action opens a popup that says so and offers to install it with Homebrew or
+cargo, whichever is present. While the plugin is
 installed and enabled, its actions appear in the git menu by default: press `prefix+g`, then `s` to switch or
 create a worktree, `l` to list worktrees, or `m` to merge. `esc` backs out to
 the top-level prefix menu. `remove` has no default key; add it to the git menu
