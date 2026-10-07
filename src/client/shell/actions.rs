@@ -71,6 +71,8 @@ impl ClientShellState {
                         search_focused: false,
                         scroll: 0,
                     }));
+                    // Help lists bundled plugin entries too.
+                    self.refresh_plugin_actions(outcome);
                     outcome.repaint = true;
                     return;
                 }
