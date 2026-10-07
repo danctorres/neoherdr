@@ -405,7 +405,24 @@ fn key_hint_renders_when_visible_and_not_otherwise() {
     shown.set_pane_surface(surface());
     press(&mut shown, prefix_key());
     let frame = shown.compose(100, 30).expect("hint frame");
-    assert!(frame_text(&frame).contains("+pane"));
+    let text = frame_text(&frame);
+    assert!(text.contains("+pane"));
+    // Unbound actions get no status bar hint.
+    assert!(!text.contains("unset"), "{text}");
+
+    // A submenu names itself and pads keys so labels share a column.
+    press(
+        &mut shown,
+        crate::input::TerminalKey::new(
+            crossterm::event::KeyCode::Char('w'),
+            crossterm::event::KeyModifiers::empty(),
+        ),
+    );
+    let frame = shown.compose(100, 30).expect("submenu frame");
+    let text = frame_text(&frame);
+    assert!(text.contains("workspace · esc back"), "{text}");
+    assert!(text.contains("n        new workspace"), "{text}");
+    assert!(text.contains("shift+j  move workspace down"), "{text}");
 
     let mut hidden = state_with_which_key(false);
     hidden.set_snapshot(Box::new(snapshot()));

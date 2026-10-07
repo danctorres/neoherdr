@@ -286,6 +286,8 @@ pub(super) enum ClientShellMode {
 /// reuse it later without a second implementation.
 #[derive(Clone, Debug, Default)]
 pub(super) struct KeyHintState {
+    /// Shown in the popup border; names the open menu.
+    pub(super) title: String,
     pub(super) bindings: Vec<(String, Cow<'static, str>)>,
     pub(super) visible: bool,
 }
@@ -1254,12 +1256,17 @@ impl ClientShellState {
 
     /// Populate the reusable key-hint primitive from the given binding set.
     /// Mode-agnostic: any caller can supply its own bindings.
-    pub(super) fn show_key_hint(&mut self, bindings: Vec<(String, Cow<'static, str>)>) {
+    pub(super) fn show_key_hint(
+        &mut self,
+        title: String,
+        bindings: Vec<(String, Cow<'static, str>)>,
+    ) {
         if bindings.is_empty() {
             self.key_hint = None;
             return;
         }
         self.key_hint = Some(KeyHintState {
+            title,
             bindings,
             visible: true,
         });
@@ -1273,9 +1280,10 @@ impl ClientShellState {
         if !self.config.local_keys.show_which_key {
             return;
         }
-        self.show_key_hint(crate::input::prefix_menu_entries(
-            &self.config.keybinds.keybinds,
-        ));
+        self.show_key_hint(
+            self.config.keybinds.primary_prefix_label(),
+            crate::input::prefix_menu_entries(&self.config.keybinds.keybinds),
+        );
     }
 
     pub(super) fn maybe_show_key_group_hint(&mut self, group: &str) {
@@ -1286,7 +1294,15 @@ impl ClientShellState {
             crate::input::group_entries_where(&self.config.keybinds.keybinds, group, |action| {
                 self.key_group_action_available(action)
             });
-        self.show_key_hint(entries);
+        let title = self
+            .config
+            .keybinds
+            .keybinds
+            .groups
+            .iter()
+            .find(|candidate| candidate.id == group)
+            .map_or(group, |candidate| candidate.description.as_str());
+        self.show_key_hint(format!("{title} · esc back"), entries);
     }
 
     /// Built-in menu members hide when the active runtime does not advertise

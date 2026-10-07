@@ -1155,8 +1155,10 @@ impl Config {
                     super::TuiKind::Popup => CommandKeybindType::Popup,
                     super::TuiKind::Tab => CommandKeybindType::Tab,
                 };
+                // Full-screen apps rarely fit the generic half-size popup.
                 let (width, height) = if action_type == CommandKeybindType::Popup {
-                    (tui.width, tui.height)
+                    let default = Some(crate::popup_size::PopupSize::Percent(90));
+                    (tui.width.or(default), tui.height.or(default))
                 } else {
                     (None, None)
                 };

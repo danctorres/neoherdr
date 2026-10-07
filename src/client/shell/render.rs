@@ -92,11 +92,17 @@ pub(super) fn render_mode_bar(
                     (" cancel  ".to_owned(), base),
                     (prefix, key),
                     (" send prefix  ".to_owned(), base),
-                    (prefix_rhs(&keybinds.keybinds.workspace_picker), key),
-                    (" workspace nav  ".to_owned(), base),
-                    (prefix_rhs(&keybinds.keybinds.help), key),
-                    (" keybinds".to_owned(), base),
                 ]);
+                // The fork leaves menu-reachable actions unbound at the top
+                // level; an "unset" hint would only be noise.
+                for (bindings, label) in [
+                    (&keybinds.keybinds.workspace_picker, " workspace nav  "),
+                    (&keybinds.keybinds.help, " keybinds"),
+                ] {
+                    if let Some(rhs) = bindings.prefix_rhs_label() {
+                        segments.extend([(rhs, key), (label.to_owned(), base)]);
+                    }
+                }
             }
             ClientShellMode::Navigate => {
                 segments.extend([
