@@ -568,7 +568,7 @@ fn help_panel_hides_unavailable_bundled_plugin_entries() {
     let help = |state: &ClientShellState| {
         crate::input::keybind_help_groups(
             &state.config.keybinds.keybinds,
-            state.config.keybinds.prefix,
+            &state.config.keybinds.prefix,
             |action| state.key_group_action_available(action),
         )
         .into_iter()
