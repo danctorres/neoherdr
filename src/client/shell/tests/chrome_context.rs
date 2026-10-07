@@ -416,7 +416,15 @@ fn global_menu_opens_from_sidebar_and_routes_client_actions() {
         row: keybinds.y,
         modifiers: KeyModifiers::empty(),
     })]);
-    assert!(help.actions.is_empty());
+    // Help opens locally; its only request asks which plugin entries to list.
+    assert!(
+        matches!(
+            help.actions.as_slice(),
+            [ClientShellAction::Endpoint { request, .. }] if matches!(request.method, crate::api::schema::Method::PluginList(_))
+        ),
+        "{:?}",
+        help.actions
+    );
     assert!(matches!(state.overlay, Some(ClientShellOverlay::Help(_))));
 
     state.overlay = Some(ClientShellOverlay::GlobalMenu(ClientGlobalMenuOverlay {

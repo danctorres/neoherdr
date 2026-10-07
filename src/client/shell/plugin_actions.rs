@@ -32,9 +32,8 @@ impl ClientShellState {
     }
 
     /// Asks the active endpoint for its plugins. Sent when a menu with plugin
-    /// members opens, at human input frequency, so it reflects plugin changes
-    /// made from the CLI while the client runs; the help panel reuses the last
-    /// answer. Failures are silent: the members just stay hidden.
+    /// members or the help panel opens, at human input frequency, so it
+    /// reflects plugin changes made from the CLI while the client runs. Failures are silent: the members just stay hidden.
     pub(super) fn refresh_plugin_actions(&mut self, outcome: &mut ClientShellInput) {
         let method =
             crate::api::schema::Method::PluginList(crate::api::schema::PluginListParams::default());
@@ -58,10 +57,10 @@ impl ClientShellState {
             return (false, Vec::new());
         }
         self.plugin_actions = Some(actions);
-        let Some(group) = self.active_key_group.clone() else {
-            return (false, Vec::new());
-        };
-        self.maybe_show_key_group_hint(&group);
+        if let Some(group) = self.active_key_group.clone() {
+            self.maybe_show_key_group_hint(&group);
+        }
+        // Repaint either way: an open help panel lists these entries too.
         (true, Vec::new())
     }
 
