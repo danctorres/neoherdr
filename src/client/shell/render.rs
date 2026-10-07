@@ -33,6 +33,7 @@ pub(super) fn render_mode_bar(
     buffer: &mut Buffer,
     pane_area: Rect,
     mode: ClientShellMode,
+    in_menu: bool,
     copy_mode: Option<&ClientCopyModeState>,
     endpoint_error: Option<&str>,
     update_available: bool,
@@ -84,6 +85,16 @@ pub(super) fn render_mode_bar(
         ]);
     } else {
         match mode {
+            // Inside a which-key menu only esc keeps its meaning: it steps
+            // back to the top level, and top-level keys no longer apply.
+            ClientShellMode::Prefix if in_menu => {
+                segments.extend([
+                    (" PREFIX ".to_owned(), mode_style),
+                    (" ".to_owned(), base),
+                    ("esc".to_owned(), key),
+                    (" back".to_owned(), base),
+                ]);
+            }
             ClientShellMode::Prefix => {
                 segments.extend([
                     (" PREFIX ".to_owned(), mode_style),
