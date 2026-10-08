@@ -23,6 +23,15 @@ the plugin does nothing. Turn it off with `neoherdr plugin disable notify`.
 
 ## Check
 
+Send a test push to the URL you put in the `url` file. If your phone buzzes, the plugin will
+reach it too:
+
+```bash
+curl -d "test from neoherdr" https://ntfy.example.ts.net/my-topic
+```
+
+The plugin's own self-check needs no network:
+
 ```bash
 python3 bin/notify test
 ```
