@@ -652,3 +652,83 @@ fn help_panel_hides_unavailable_bundled_plugin_entries() {
     open_git_menu_with_plugins(&mut state, vec![worktrunk_plugin(true)]);
     assert!(help(&state));
 }
+
+#[cfg(not(windows))]
+#[test]
+fn bundled_plugin_key_pressed_before_plugin_list_answers_still_invokes() {
+    let mut state = state_with_which_key(true);
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+
+    press(&mut state, prefix_key());
+    // The git menu's plugin.list request stays unanswered.
+    press(&mut state, plain_key(crossterm::event::KeyCode::Char('g')));
+    let input = press(&mut state, plain_key(crossterm::event::KeyCode::Char('s')));
+
+    let [ClientShellAction::Endpoint { request, .. }] = &input.actions[..] else {
+        panic!("expected plugin.action.invoke: {:?}", input.actions);
+    };
+    let crate::api::schema::Method::PluginActionInvoke(params) = &request.method else {
+        panic!("expected plugin.action.invoke: {:?}", request.method);
+    };
+    assert_eq!(params.action_id, "worktrunk.switch");
+}
+
+fn endpoint_command(
+    id: &str,
+    labels: &[&str],
+    action: crate::protocol::ClientShellCommandAction,
+    description: &str,
+) -> crate::protocol::ClientShellCommand {
+    crate::protocol::ClientShellCommand {
+        command_id: id.into(),
+        binding_label: labels.join(" / "),
+        binding_labels: labels.iter().map(|label| (*label).to_owned()).collect(),
+        action,
+        description: Some(description.into()),
+    }
+}
+
+#[test]
+fn keymap_change_closes_an_open_menu_and_its_hint() {
+    let mut state = state_with_which_key(true);
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    press(&mut state, prefix_key());
+    press(&mut state, plain_key(crossterm::event::KeyCode::Char('t')));
+    assert_eq!(state.active_key_group.as_deref(), Some("tab"));
+    assert!(state.key_hint.is_some());
+
+    let mut projection = snapshot();
+    projection.revision = 2;
+    projection.commands.push(endpoint_command(
+        "cmd_reloaded",
+        &["prefix+alt+z"],
+        crate::protocol::ClientShellCommandAction::Shell,
+        "reloaded",
+    ));
+    state.set_snapshot(Box::new(projection));
+
+    assert_eq!(state.mode, ClientShellMode::Terminal);
+    assert_eq!(state.active_key_group, None);
+    assert!(state.key_hint.is_none());
+    // The next prefix starts at the top-level menu, not the stale tab menu.
+    press(&mut state, prefix_key());
+    assert_eq!(state.active_key_group, None);
+}
+
+#[test]
+fn losing_the_local_endpoint_closes_an_open_menu_and_its_hint() {
+    let mut state = state_with_which_key(true);
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    press(&mut state, prefix_key());
+    press(&mut state, plain_key(crossterm::event::KeyCode::Char('t')));
+    assert_eq!(state.active_key_group.as_deref(), Some("tab"));
+
+    state.select_unavailable_local();
+
+    assert_eq!(state.mode, ClientShellMode::Terminal);
+    assert_eq!(state.active_key_group, None);
+    assert!(state.key_hint.is_none());
+}

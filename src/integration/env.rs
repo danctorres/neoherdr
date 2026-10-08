@@ -52,10 +52,17 @@ fn path_with_herdr_fallback(
     executable: &std::path::Path,
 ) -> Option<std::ffi::OsString> {
     let link = dir.join("herdr");
-    if std::fs::read_link(&link).ok().as_deref() != Some(executable) {
+    // Link the real binary. A process started through the link itself (e.g.
+    // a daemon re-exec'd from a pane's `herdr`) reports the link as its
+    // executable; linking that would make the link point at itself.
+    let target = std::fs::canonicalize(executable).unwrap_or_else(|_| executable.to_path_buf());
+    if target == link {
+        return None;
+    }
+    if std::fs::read_link(&link).ok().as_deref() != Some(target.as_path()) {
         std::fs::create_dir_all(dir).ok()?;
         let _ = std::fs::remove_file(&link);
-        std::os::unix::fs::symlink(executable, &link).ok()?;
+        std::os::unix::fs::symlink(&target, &link).ok()?;
     }
     let mut entries = path
         .map(|path| std::env::split_paths(path).collect::<Vec<_>>())
@@ -357,5 +364,36 @@ mod herdr_fallback_tests {
         assert_eq!(std::fs::read_link(dir.join("herdr")).unwrap(), moved);
 
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_server_started_through_the_link_never_points_it_at_itself() {
+        let root = std::env::temp_dir().join(format!(
+            "herdr-fallback-self-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let dir = root.join("bin");
+        let real = root.join("fork").join("neoherdr");
+        std::fs::create_dir_all(real.parent().unwrap()).unwrap();
+        std::fs::write(&real, b"").unwrap();
+        let link = dir.join("herdr");
+
+        path_with_herdr_fallback(None, &dir, &real).expect("fallback path");
+        // The server now reports the link as its executable.
+        path_with_herdr_fallback(None, &dir, &link).expect("fallback path");
+        assert_eq!(
+            std::fs::canonicalize(&link).unwrap(),
+            std::fs::canonicalize(&real).unwrap()
+        );
+
+        // With the real binary gone the link cannot be resolved; it must still
+        // not be replaced by a link to itself.
+        std::fs::remove_file(&real).unwrap();
+        assert_eq!(path_with_herdr_fallback(None, &dir, &link), None);
+        assert_ne!(std::fs::read_link(&link).unwrap(), link);
+
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

@@ -39,6 +39,19 @@ impl Default for TuiConfig {
     }
 }
 
+/// The keys a `[[tui]]` table may contain; anything else is reported.
+const TUI_FIELDS: &[&str] = &[
+    "id",
+    "key",
+    "title",
+    "description",
+    "command",
+    "platforms",
+    "type",
+    "width",
+    "height",
+];
+
 /// Validates the `[[tui]]` entries of `config.toml`.
 ///
 /// `value` is the top-level `tui` key, if present. Each entry is validated
@@ -65,6 +78,18 @@ pub(crate) fn parse_tuis(value: Option<&toml::Value>) -> (Vec<TuiConfig>, Vec<St
         "windows"
     };
     for (index, entry) in entries.iter().enumerate() {
+        let field = format!("tui[{index}]");
+        if let Some(table) = entry.as_table() {
+            for key in table
+                .keys()
+                .filter(|key| !TUI_FIELDS.contains(&key.as_str()))
+            {
+                diagnostics.push(format!(
+                    "unknown config key {field}.{}; ignoring key",
+                    format_key(key)
+                ));
+            }
+        }
         let tui: TuiConfig = match entry.clone().try_into() {
             Ok(tui) => tui,
             Err(err) => {
@@ -72,7 +97,6 @@ pub(crate) fn parse_tuis(value: Option<&toml::Value>) -> (Vec<TuiConfig>, Vec<St
                 continue;
             }
         };
-        let field = format!("tui[{index}]");
         if tui.id.trim().is_empty()
             || tui.title.trim().is_empty()
             || tui.key.trim().is_empty()
@@ -118,6 +142,20 @@ pub(crate) fn parse_tuis(value: Option<&toml::Value>) -> (Vec<TuiConfig>, Vec<St
         result.push(tui);
     }
     (result, diagnostics)
+}
+
+/// A `[[tui]]` key as written in a TOML path: bare when it can be, quoted
+/// otherwise.
+fn format_key(key: &str) -> String {
+    if !key.is_empty()
+        && key
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+    {
+        key.to_owned()
+    } else {
+        toml::Value::String(key.to_owned()).to_string()
+    }
 }
 
 #[cfg(test)]
@@ -333,6 +371,28 @@ command = ["lazygit"]
                 .iter()
                 .any(|diag| diag.contains("invalid tui[0]")),
             "{diagnostics:?}"
+        );
+    }
+
+    #[test]
+    fn unknown_keys_inside_tui_entries_are_reported() {
+        let (tuis, diagnostics) = parse_tuis_str(
+            r#"[[tui]]
+id = "git"
+key = "g"
+title = "Git"
+command = ["lazygit"]
+platfroms = ["windows"]
+"widht.x" = "80%"
+"#,
+        );
+        assert_eq!(tuis.len(), 1);
+        assert_eq!(
+            diagnostics,
+            vec![
+                "unknown config key tui[0].platfroms; ignoring key".to_string(),
+                "unknown config key tui[0].\"widht.x\"; ignoring key".to_string(),
+            ]
         );
     }
 }

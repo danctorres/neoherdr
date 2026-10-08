@@ -117,11 +117,14 @@ fn update_with_declined_at<T>(
     let mut declined = declined_before.clone();
     let result = mutation(&mut plugins, &mut declined);
     plugins.sort_by(|left, right| left.plugin_id.cmp(&right.plugin_id));
-    if plugins != before {
-        save_to_path(registry, &plugins)?;
-    }
+    // The declined set goes first: if the registry write then fails, a
+    // removed bundled plugin is still recorded as declined and is not
+    // re-seeded on the next start.
     if declined != declined_before {
         save_json_to_path(declined_file, &DeclinedPlugins { declined })?;
+    }
+    if plugins != before {
+        save_to_path(registry, &plugins)?;
     }
     Ok((result, plugins))
 }
@@ -544,6 +547,29 @@ mod tests {
         })
         .unwrap();
         assert!(load_declined_strict(&declined).unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn failed_declined_write_keeps_the_removed_plugin_registered() {
+        let path = temp_registry_path("declined-fails");
+        save_to_path(&path, &[sample_plugin("worktrunk")]).unwrap();
+        // A regular file where the declined file's directory should be
+        // makes the declined write fail.
+        let blocker = path.with_file_name("not-a-dir");
+        std::fs::write(&blocker, b"").unwrap();
+        let declined = blocker.join("plugins-declined.json");
+
+        let result = update_with_declined_at(&path, &declined, |plugins, declined| {
+            plugins.retain(|plugin| plugin.plugin_id != "worktrunk");
+            declined.insert("worktrunk".into());
+        });
+
+        assert!(result.is_err());
+        let registry = load_from_path_strict(&path).unwrap();
+        assert!(registry
+            .iter()
+            .any(|plugin| plugin.plugin_id == "worktrunk"));
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 }

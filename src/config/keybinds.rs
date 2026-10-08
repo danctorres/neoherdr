@@ -14,8 +14,8 @@ use std::borrow::Cow;
 
 use self::menus::{
     add_group, builtin_group_opener, default_menu_entries, group_is_defined,
-    parse_group_member_bindings, report_shadowed_menu_openers, resolve_groups, MenuEntry,
-    TUI_GROUP,
+    parse_group_member_bindings, parse_menu_opener_bindings, report_shadowed_menu_openers,
+    resolve_groups, MenuEntry, TUI_GROUP,
 };
 pub(crate) use self::menus::{KeyGroup, KeyGroupAction, WORKSPACE_GROUP};
 
@@ -682,6 +682,19 @@ impl Config {
                 }
             };
         }
+        macro_rules! apply_menu {
+            ($target:expr, $field:ident, $source:expr) => {
+                if field_source!($field) == $source {
+                    $target = parse_menu_opener_bindings(
+                        concat!("keys.", stringify!($field)),
+                        &self.keys.$field,
+                        &mut registry,
+                        &mut diagnostics,
+                        $source,
+                    );
+                }
+            };
+        }
         macro_rules! apply_indexed {
             (
                 $target:expr,
@@ -819,13 +832,13 @@ impl Config {
                 swap_with_focused_pane,
                 source
             );
-            apply_action!(keybinds.workspace_menu, workspace_menu, source);
-            apply_action!(keybinds.tab_menu, tab_menu, source);
-            apply_action!(keybinds.pane_menu, pane_menu, source);
-            apply_action!(keybinds.agent_menu, agent_menu, source);
-            apply_action!(keybinds.git_menu, git_menu, source);
-            apply_action!(keybinds.system_menu, system_menu, source);
-            apply_action!(keybinds.tui_menu, tui_menu, source);
+            apply_menu!(keybinds.workspace_menu, workspace_menu, source);
+            apply_menu!(keybinds.tab_menu, tab_menu, source);
+            apply_menu!(keybinds.pane_menu, pane_menu, source);
+            apply_menu!(keybinds.agent_menu, agent_menu, source);
+            apply_menu!(keybinds.git_menu, git_menu, source);
+            apply_menu!(keybinds.system_menu, system_menu, source);
+            apply_menu!(keybinds.tui_menu, tui_menu, source);
 
             if source == field_source!(indexed) {
                 append_legacy_indexed_bindings(
@@ -886,8 +899,8 @@ impl Config {
             }
         }
 
+        resolve_groups(&mut keybinds, menu_entries, &mut diagnostics);
         report_shadowed_menu_openers(self, &keybinds, &registry, &mut diagnostics);
-        resolve_groups(&mut keybinds, menu_entries);
         (prefix_diag, prefix, diagnostics, keybinds)
     }
 }
@@ -998,7 +1011,7 @@ fn append_custom_command_bindings(
                 BindingSource::Default => builtin_group_opener(keybinds, group)
                     .cloned()
                     .unwrap_or_default(),
-                BindingSource::User => parse_action_bindings(
+                BindingSource::User => parse_menu_opener_bindings(
                     &key_field,
                     &command.key,
                     registry,
@@ -1007,6 +1020,16 @@ fn append_custom_command_bindings(
                 ),
             };
             if opener.bindings.is_empty() && source == BindingSource::User {
+                // Unusable keys were already reported while parsing; a
+                // missing key was not.
+                if !command.key.has_values() {
+                    diagnostic(
+                        diagnostics,
+                        format!(
+                            "group opener missing key: {key_field} for group {group:?}; disabling menu opener"
+                        ),
+                    );
+                }
                 continue;
             }
             if command.width.is_some() || command.height.is_some() {
