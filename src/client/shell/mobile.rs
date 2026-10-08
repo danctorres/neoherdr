@@ -10,6 +10,7 @@ use super::render::{display_width, put_segment, put_text};
 use super::*;
 
 const MOBILE_BUTTON_WIDTH: u16 = 10;
+const MOBILE_KEYS_BUTTON_WIDTH: u16 = 6;
 
 struct MobileItem {
     lines: Vec<Line<'static>>,
@@ -67,7 +68,21 @@ pub(super) fn render_mobile_header(
         area.height,
     );
     hits.mobile_switch = button;
-    let status_width = button.x.saturating_sub(area.x).saturating_sub(1);
+    // Opens the which-key menu by touch; without the popup there is nothing to tap.
+    let keys_width = if config.local_keys.show_which_key {
+        MOBILE_KEYS_BUTTON_WIDTH.min(button.x.saturating_sub(area.x))
+    } else {
+        0
+    };
+    let keys = Rect::new(
+        button.x.saturating_sub(keys_width),
+        area.y,
+        keys_width,
+        area.height,
+    );
+    hits.mobile_keys = keys;
+    render_keys_button(buffer, keys, palette);
+    let status_width = keys.x.saturating_sub(area.x).saturating_sub(1);
     let status = Rect::new(area.x, area.y, status_width, area.height);
     render_header_status(buffer, status, snapshot, config);
     render_header_button(buffer, button, snapshot, config);
@@ -200,6 +215,26 @@ fn render_header_button(
             Style::default().fg(palette.red).bg(palette.surface0),
         );
     }
+}
+
+fn render_keys_button(buffer: &mut Buffer, area: Rect, palette: &Palette) {
+    if area.is_empty() {
+        return;
+    }
+    let style = Style::default().bg(palette.surface0);
+    buffer.set_style(area, style);
+    for y in area.y..area.bottom() {
+        put_text(buffer, area.x, y, 1, "│", style.fg(palette.surface_dim));
+    }
+    let label_y = if area.height > 1 { area.y + 1 } else { area.y };
+    put_text(
+        buffer,
+        area.x.saturating_add(1),
+        label_y,
+        area.width.saturating_sub(1),
+        " keys",
+        style.fg(palette.text).add_modifier(Modifier::BOLD),
+    );
 }
 
 fn mobile_endpoint_state(status: ClientEndpointStatus) -> &'static str {
@@ -954,6 +989,28 @@ impl ClientShellState {
         }
         use crossterm::event::{MouseButton, MouseEventKind};
         let point = (mouse.column, mouse.row);
+        if mouse.kind == MouseEventKind::Down(MouseButton::Left)
+            && super::contains(self.hits.mobile_keys, point)
+        {
+            match self.mode {
+                ClientShellMode::Terminal | ClientShellMode::Copy => {
+                    self.mode = ClientShellMode::Prefix;
+                    self.maybe_show_prefix_key_hint();
+                    outcome.repaint = true;
+                    return true;
+                }
+                // Same as Esc: a submenu steps back, the top level leaves.
+                ClientShellMode::Prefix => {
+                    let esc = crate::input::TerminalKey::new(
+                        crossterm::event::KeyCode::Esc,
+                        crossterm::event::KeyModifiers::empty(),
+                    );
+                    self.route_key_press(&esc, outcome);
+                    return true;
+                }
+                _ => {}
+            }
+        }
         if self.mode != ClientShellMode::Navigate {
             if matches!(
                 self.mode,

@@ -712,8 +712,9 @@ impl ClientShellState {
             let area = self.key_hint.as_ref().and_then(|hint| {
                 render::render_key_hint(&mut composed, hint, &self.config.palette)
             });
-            if let Some(area) = area {
+            if let Some((area, rows)) = area {
                 occlusion.cover(area);
+                self.hits.key_hint_rows = rows;
             }
             frame.replace_from_ratatui_buffer_preserving_effects(&composed, None);
         }
