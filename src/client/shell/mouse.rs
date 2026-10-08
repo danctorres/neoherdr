@@ -680,6 +680,33 @@ impl ClientShellState {
     ///
     /// Hit-test order determines which overlapping control receives the event;
     /// the sidebar toggle takes precedence over the agent scrollbar beneath it.
+    /// A click on a which-key row presses that row's key, so mouse and touch
+    /// reach every action the keymap does. Range rows such as `1..9` name no
+    /// single key and are swallowed.
+    fn press_key_hint_row(&mut self, point: (u16, u16), outcome: &mut ClientShellInput) -> bool {
+        if self.mode != ClientShellMode::Prefix {
+            return false;
+        }
+        let Some(&(_, index)) = self
+            .hits
+            .key_hint_rows
+            .iter()
+            .find(|(rect, _)| super::contains(*rect, point))
+        else {
+            return false;
+        };
+        let combo = self
+            .key_hint
+            .as_ref()
+            .and_then(|hint| hint.bindings.get(index))
+            .and_then(|(label, _)| label.split(" / ").next())
+            .and_then(crate::config::parse_key_combo);
+        if let Some((code, modifiers)) = combo {
+            self.route_key_press(&crate::input::TerminalKey::new(code, modifiers), outcome);
+        }
+        true
+    }
+
     pub(super) fn handle_mouse(&mut self, mouse: MouseEvent, outcome: &mut ClientShellInput) {
         self.update_link_hover(mouse, outcome);
         let point = (mouse.column, mouse.row);
@@ -692,6 +719,11 @@ impl ClientShellState {
             self.mode = self.copy_or_terminal_mode();
             self.navigate_workspace_id = None;
             outcome.repaint = true;
+        }
+        if mouse.kind == MouseEventKind::Down(MouseButton::Left)
+            && self.press_key_hint_row(point, outcome)
+        {
+            return;
         }
         if matches!(self.overlay, Some(ClientShellOverlay::Onboarding)) {
             if mouse.kind == MouseEventKind::Down(MouseButton::Left)

@@ -603,7 +603,7 @@ impl ClientShellState {
         true
     }
 
-    fn route_key_press(
+    pub(super) fn route_key_press(
         &mut self,
         key: &crate::input::TerminalKey,
         outcome: &mut ClientShellInput,
