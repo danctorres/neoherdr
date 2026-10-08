@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+"""Push a notification when an agent blocks or finishes."""
+import json
+import os
+import subprocess
+import sys
+import urllib.request
+
+STATUSES = ("blocked", "done")
+
+
+def message(event, agent):
+    """Return (title, body) for a status event, or None when it is not worth a push."""
+    data = event.get("data") or event
+    status = data.get("agent_status")
+    if status not in STATUSES:
+        return None
+    name = agent.get("name") or agent.get("agent") or "agent"
+    return f"{name} {status}", agent.get("cwd") or data.get("pane_id") or ""
+
+
+def main():
+    event = json.loads(os.environ.get("HERDR_PLUGIN_EVENT_JSON") or "{}")
+    try:
+        with open(os.path.join(os.environ.get("HERDR_PLUGIN_CONFIG_DIR", ""), "url")) as file:
+            url = file.read().strip()
+    except OSError:
+        return
+    pane = (event.get("data") or event).get("pane_id")
+    if not url or not pane:
+        return
+    out = subprocess.run(
+        [os.environ.get("HERDR_BIN_PATH", "herdr"), "agent", "get", pane],
+        capture_output=True,
+        text=True,
+    )
+    try:
+        agent = (json.loads(out.stdout).get("result") or {}).get("agent") or {}
+    except ValueError:
+        agent = {}
+    found = message(event, agent)
+    if not found:
+        return
+    title, body = found
+    # HTTP headers are latin-1, so the title drops anything outside ASCII.
+    request = urllib.request.Request(
+        url,
+        data=(body or title).encode(),
+        headers={"Title": title.encode("ascii", "ignore").decode()},
+    )
+    urllib.request.urlopen(request, timeout=10).close()
+
+
+def test():
+    agent = {"agent": "claude", "cwd": "/repo"}
+    blocked = {"data": {"pane_id": "p1", "agent_status": "blocked"}}
+    assert message(blocked, agent) == ("claude blocked", "/repo")
+    assert message({"pane_id": "p1", "agent_status": "done"}, {}) == ("agent done", "p1")
+    assert message({"data": {"pane_id": "p1", "agent_status": "working"}}, agent) is None
+    assert message({}, agent) is None
+    print("ok")
+
+
+if __name__ == "__main__":
+    test() if sys.argv[1:] == ["test"] else main()
