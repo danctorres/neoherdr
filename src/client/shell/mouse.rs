@@ -676,10 +676,6 @@ impl ClientShellState {
         }
     }
 
-    /// Routes mouse input through overlays, shell controls, and pane interactions.
-    ///
-    /// Hit-test order determines which overlapping control receives the event;
-    /// the sidebar toggle takes precedence over the agent scrollbar beneath it.
     /// A click on a which-key row presses that row's key, so mouse and touch
     /// reach every action the keymap does. Range rows such as `1..9` name no
     /// single key and are swallowed.
@@ -707,6 +703,10 @@ impl ClientShellState {
         true
     }
 
+    /// Routes mouse input through overlays, shell controls, and pane interactions.
+    ///
+    /// Hit-test order determines which overlapping control receives the event;
+    /// the sidebar toggle takes precedence over the agent scrollbar beneath it.
     pub(super) fn handle_mouse(&mut self, mouse: MouseEvent, outcome: &mut ClientShellInput) {
         self.update_link_hover(mouse, outcome);
         let point = (mouse.column, mouse.row);

@@ -26,8 +26,9 @@ def main():
             url = file.read().strip()
     except OSError:
         return
-    pane = (event.get("data") or event).get("pane_id")
-    if not url or not pane:
+    data = event.get("data") or event
+    pane = data.get("pane_id")
+    if not url or not pane or data.get("agent_status") not in STATUSES:
         return
     out = subprocess.run(
         [os.environ.get("HERDR_BIN_PATH", "herdr"), "agent", "get", pane],
