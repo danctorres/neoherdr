@@ -1,0 +1,17 @@
+id = "subagents"
+name = "Subagents"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Open a pane for each subagent started by Claude Code, omp, pi, or OpenCode"
+platforms = ["linux", "macos"]
+
+[[events]]
+on = "pane.agent_status_changed"
+command = ["python3", "bin/subagents", "watch"]
+
+[[panes]]
+id = "view"
+title = "subagent"
+description = "Live activity of one subagent"
+placement = "split"
+command = ["python3", "bin/subagents", "view"]

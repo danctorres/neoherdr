@@ -1,0 +1,368 @@
+#!/usr/bin/env python3
+"""subagents plugin: one pane for each subagent started by the agent in a pane.
+
+watch  pane.agent_status_changed hook, polls a working agent's session for new subagents
+view   plugin pane, follows one subagent's transcript
+test   self-check of the transcript readers
+"""
+import fcntl
+import glob
+import json
+import os
+import re
+import shutil
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import time
+
+HERDR = os.environ.get("HERDR_BIN_PATH", "herdr")
+PLUGIN = os.environ.get("HERDR_PLUGIN_ID", "subagents")
+POLL = 1.0
+# Seconds a pane stays open after its subagent finishes.
+LINGER = float(os.environ.get("SUBAGENTS_LINGER", "20"))
+# A subagent with no finish record and no writes for this long was interrupted.
+# ponytail: a single tool call running longer than this closes the pane early,
+# ask the parent pane's status instead if that happens in practice.
+STALE = 600.0
+# A watcher that starts mid-session opens only subagents written this recently.
+FRESH = 120.0
+
+
+def herdr(*args):
+    out = subprocess.run([HERDR, *args], capture_output=True, text=True)
+    try:
+        return json.loads(out.stdout).get("result")
+    except ValueError:
+        return None
+
+
+def brief(args):
+    if not isinstance(args, dict):
+        return ""
+    for key in ("description", "file_path", "path", "pattern", "command", "query", "url", "prompt"):
+        if args.get(key):
+            return str(args[key])
+    return json.dumps(args)
+
+
+def parse_message(rec, events):
+    """Append what a Claude Code, omp or pi transcript record shows.
+
+    Returns whether the subagent is finished after this record, or None when
+    the record says nothing about it.
+    """
+    msg = rec.get("message")
+    if not isinstance(msg, dict):
+        return None
+    content = msg.get("content")
+    if isinstance(content, str):
+        content = [{"type": "text", "text": content}]
+    role = msg.get("role")
+    if role not in ("user", "assistant"):
+        return False
+    for item in content or []:
+        kind = item.get("type")
+        if kind == "text":
+            events.append(("task" if role == "user" else "text", item.get("text", "")))
+        elif kind in ("tool_use", "toolCall"):
+            detail = item.get("intent") or brief(item.get("input") or item.get("arguments"))
+            events.append(("tool", item.get("name", ""), detail))
+    if role == "user":
+        return False
+    stop = msg.get("stop_reason") or msg.get("stopReason")
+    return stop not in (None, "tool_use", "toolUse")
+
+
+class JsonlSource:
+    def __init__(self, path):
+        self.path, self.pos, self.done = path, 0, False
+
+    def mtime(self):
+        try:
+            return os.path.getmtime(self.path)
+        except OSError:
+            return 0.0
+
+    def poll(self):
+        events = []
+        try:
+            with open(self.path, "rb") as f:
+                f.seek(self.pos)
+                # A line without its newline is still being written.
+                while (line := f.readline()).endswith(b"\n"):
+                    self.pos = f.tell()
+                    try:
+                        done = parse_message(json.loads(line), events)
+                    except ValueError:
+                        continue
+                    if done is not None:
+                        self.done = done
+        except OSError:
+            pass
+        return events
+
+
+def opencode_db():
+    data = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    return sqlite3.connect(f"file:{data}/opencode/opencode.db?mode=ro", uri=True)
+
+
+class OpencodeSource:
+    def __init__(self, session):
+        self.session, self.seen, self.since, self.done = session, set(), 0, False
+
+    def mtime(self):
+        return self.since / 1000
+
+    def poll(self):
+        events = []
+        try:
+            db = opencode_db()
+            rows = db.execute(
+                "select id, time_updated, data from part"
+                " where session_id = ? and time_updated >= ? order by id",
+                (self.session, self.since),
+            ).fetchall()
+            db.close()
+        except sqlite3.Error:
+            return events
+        for part_id, updated, data in rows:
+            self.since = max(self.since, updated)
+            if part_id in self.seen:
+                continue
+            try:
+                part = json.loads(data)
+            except ValueError:
+                continue
+            kind = part.get("type")
+            if kind == "text":
+                # A text part with a start time and no end time is still streaming.
+                if "time" in part and not part["time"].get("end"):
+                    continue
+                # The first text part of a child session is the prompt it was given.
+                events.append(("task" if not self.seen else "text", part.get("text", "")))
+            elif kind == "tool":
+                state = part.get("state") or {}
+                if state.get("status") not in ("running", "completed", "error"):
+                    continue
+                events.append(("tool", part.get("tool", ""), state.get("title") or brief(state.get("input"))))
+            elif kind == "step-start":
+                self.done = False
+            elif kind == "step-finish":
+                self.done = part.get("reason") != "tool-calls"
+            self.seen.add(part_id)
+        return events
+
+
+def source_for(src):
+    return OpencodeSource(src[len("opencode:"):]) if src.startswith("opencode:") else JsonlSource(src)
+
+
+def discover(kind, session):
+    """Map each subagent of an agent session to its label, keyed by transcript source."""
+    value = session.get("value") or ""
+    found = {}
+    if not value:
+        return found
+    if kind == "claude":
+        root = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+        pattern = os.path.join(glob.escape(root), "projects", "*", glob.escape(value), "subagents", "*.jsonl")
+        for path in glob.glob(pattern):
+            label = os.path.basename(path)[: -len(".jsonl")]
+            try:
+                with open(path[: -len(".jsonl")] + ".meta.json") as f:
+                    meta = json.load(f)
+                label = ": ".join(filter(None, (meta.get("agentType"), meta.get("description")))) or label
+            except (OSError, ValueError):
+                pass
+            found[path] = label
+    elif kind == "opencode":
+        try:
+            db = opencode_db()
+            for child, agent, title in db.execute(
+                "select id, agent, title from session where parent_id = ?", (value,)
+            ):
+                found["opencode:" + child] = ": ".join(filter(None, (agent, title))) or child
+            db.close()
+        except sqlite3.Error:
+            pass
+    elif session.get("kind") == "path":
+        # omp, and pi with a subagent extension that saves sessions the same way:
+        # subagents live in a directory named after the parent session file.
+        for path in glob.glob(os.path.join(glob.escape(value.removesuffix(".jsonl")), "*.jsonl")):
+            found[path] = os.path.basename(path)[: -len(".jsonl")]
+    return found
+
+
+def open_view(parent, panes, src, label):
+    panes[:] = [pane for pane in panes if herdr("pane", "get", pane)]
+    # First subagent goes beside the agent, the rest stack below it.
+    target, direction = (panes[-1], "down") if panes else (parent, "right")
+    args = ["--env", f"SUBAGENT_SRC={src}", "--env", f"SUBAGENT_LABEL={label}"]
+    if "SUBAGENTS_LINGER" in os.environ:
+        args += ["--env", f"SUBAGENTS_LINGER={os.environ['SUBAGENTS_LINGER']}"]
+    result = herdr(
+        "plugin", "pane", "open", "--plugin", PLUGIN, "--entrypoint", "view",
+        "--placement", "split", "--target-pane", target, "--direction", direction, "--no-focus", *args,
+    )
+    pane = (((result or {}).get("plugin_pane") or {}).get("pane") or {}).get("pane_id")
+    if pane:
+        panes.append(pane)
+        herdr("pane", "rename", pane, label)
+
+
+def watch():
+    event = json.loads(os.environ.get("HERDR_PLUGIN_EVENT_JSON") or "{}")
+    data = event.get("data") or event
+    pane = data.get("pane_id")
+    if not pane or data.get("agent_status") != "working":
+        return
+    # One watcher per pane and server: later status events find the lock held.
+    name = re.sub(r"\W", "_", os.environ.get("HERDR_SOCKET_PATH", "") + pane)
+    state = os.environ.get("HERDR_PLUGIN_STATE_DIR") or tempfile.gettempdir()
+    lock = open(os.path.join(state, f"watch{name}.lock"), "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return
+
+    known, sources, panes, quiet = None, [], [], 0
+    # ponytail: polls once a second while the agent works, the agents offer no
+    # common subagent-start event. Give each integration one if this costs too much.
+    while True:
+        agent = (herdr("agent", "get", pane) or {}).get("agent")
+        if not agent:
+            return
+        found = discover(agent.get("agent"), agent.get("agent_session") or {})
+        for src, label in found.items():
+            if known is not None and src in known:
+                continue
+            source = source_for(src)
+            source.poll()
+            # Subagents from before this watcher started are opened only when still running.
+            if known is None and (source.done or time.time() - source.mtime() > FRESH):
+                continue
+            sources.append(source)
+            open_view(pane, panes, src, label)
+        known = set(found)
+        for source in sources:
+            source.poll()
+        # Background subagents keep running after the agent itself goes idle.
+        busy = agent.get("agent_status") == "working" or any(not source.done for source in sources)
+        quiet = 0 if busy else quiet + 1
+        if quiet > 5:
+            return
+        time.sleep(POLL)
+
+
+def render(event, shown_task):
+    width = shutil.get_terminal_size().columns
+    if event[0] == "task":
+        if not shown_task:
+            lines = event[1].strip().splitlines()[:3]
+            print("\033[2m" + "\n".join(line[:width] for line in lines) + "\033[0m\n")
+    elif event[0] == "tool":
+        line = f"▶ {event[1]}  " + " ".join(event[2].split())
+        print(f"\033[36m{line[:width]}\033[0m")
+    elif event[1].strip():
+        print(event[1].strip())
+
+
+def view():
+    src = os.environ["SUBAGENT_SRC"]
+    source = source_for(src)
+    print(f"\033[1m{os.environ.get('SUBAGENT_LABEL', src)}\033[0m")
+    shown_task, finished, last = False, None, time.monotonic()
+    while True:
+        events = source.poll()
+        for event in events:
+            render(event, shown_task)
+            shown_task = True
+        now = time.monotonic()
+        if events:
+            last = now
+        if events or not source.done:
+            finished = None
+        elif finished is None:
+            finished = now
+            print("\033[2m── finished ──\033[0m")
+        elif now - finished >= LINGER:
+            return
+        if now - last >= STALE:
+            return
+        sys.stdout.flush()
+        time.sleep(POLL)
+
+
+def test():
+    events = []
+    claude = [
+        {"type": "user", "message": {"role": "user", "content": "find it"}},
+        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "tool_use", "content": [
+            {"type": "tool_use", "name": "Read", "input": {"file_path": "a.rs"}}]}},
+        {"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "content": "x"}]}},
+        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "end_turn", "content": [
+            {"type": "text", "text": "found"}]}},
+    ]
+    done = [parse_message(rec, events) for rec in claude]
+    assert done == [False, False, False, True], done
+    assert events == [("task", "find it"), ("tool", "Read", "a.rs"), ("text", "found")], events
+
+    events = []
+    omp = [
+        {"type": "session", "id": "x"},
+        {"type": "message", "message": {"role": "assistant", "stopReason": "toolUse", "content": [
+            {"type": "thinking", "thinking": "hm"},
+            {"type": "toolCall", "name": "read", "intent": "Reading diff", "arguments": {"path": "d"}}]}},
+        {"type": "message", "message": {"role": "toolResult", "content": [{"type": "text", "text": "x"}]}},
+        {"type": "message", "message": {"role": "assistant", "stopReason": "stop", "content": [
+            {"type": "text", "text": "ok"}]}},
+    ]
+    done = [parse_message(rec, events) for rec in omp]
+    assert done == [None, False, False, True], done
+    assert events == [("tool", "read", "Reading diff"), ("text", "ok")], events
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "a.jsonl")
+        with open(path, "w") as f:
+            f.write(json.dumps(claude[0]) + "\n" + json.dumps(claude[1])[:20])
+        source = JsonlSource(path)
+        assert source.poll() == [("task", "find it")] and not source.done
+        with open(path, "a") as f:
+            f.write(json.dumps(claude[1])[20:] + "\n" + json.dumps(claude[3]) + "\n")
+        assert source.poll() == [("tool", "Read", "a.rs"), ("text", "found")] and source.done
+
+        os.makedirs(os.path.join(tmp, "opencode"))
+        db = sqlite3.connect(os.path.join(tmp, "opencode", "opencode.db"))
+        db.execute("create table session (id, parent_id, agent, title)")
+        db.execute("create table part (id, session_id, time_updated, data)")
+        db.execute("insert into session values ('c', 'p', 'explore', 'Find it')")
+        parts = [
+            {"type": "text", "text": "find it"},
+            {"type": "step-start"},
+            {"type": "tool", "tool": "grep", "state": {"status": "pending", "input": {}}},
+            {"type": "text", "text": "fou", "time": {"start": 1}},
+        ]
+        for i, part in enumerate(parts):
+            db.execute("insert into part values (?, 'c', ?, ?)", (i, i, json.dumps(part)))
+        db.commit()
+        os.environ["XDG_DATA_HOME"] = tmp
+        assert discover("opencode", {"value": "p"}) == {"opencode:c": "explore: Find it"}
+        source = OpencodeSource("c")
+        assert source.poll() == [("task", "find it")] and not source.done
+        parts[2]["state"] = {"status": "completed", "title": "getUser", "input": {"pattern": "getUser"}}
+        parts[3] = {"type": "text", "text": "found", "time": {"start": 1, "end": 2}}
+        parts.append({"type": "step-finish", "reason": "stop"})
+        for i, part in enumerate(parts[2:], 2):
+            db.execute("insert or replace into part values (?, 'c', ?, ?)", (i, i + 10, json.dumps(part)))
+        db.execute("delete from part where id in (2, 3) and time_updated < 10")
+        db.commit()
+        assert source.poll() == [("tool", "grep", "getUser"), ("text", "found")] and source.done
+        assert source.poll() == []
+    print("ok")
+
+
+if __name__ == "__main__":
+    {"watch": watch, "view": view, "test": test}[sys.argv[1]]()
