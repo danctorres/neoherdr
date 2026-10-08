@@ -845,3 +845,34 @@ fn single_key_hint_labels_resolve_to_their_binding() {
         }
     }
 }
+
+#[test]
+fn phone_width_menu_spans_the_screen_with_taller_rows_when_they_fit() {
+    let mut state = state_with_which_key(true);
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    press(&mut state, prefix_key());
+    // The top-level menu is too long to double, but every row spans the popup.
+    state.compose(44, 30).expect("prefix menu");
+    assert!(state
+        .hits
+        .key_hint_rows
+        .iter()
+        .all(|(rect, _)| rect.height == 1 && rect.width == 42));
+
+    press(&mut state, plain_key(crossterm::event::KeyCode::Char('a')));
+    state.compose(44, 30).expect("agent menu");
+    assert!(state
+        .hits
+        .key_hint_rows
+        .iter()
+        .all(|(rect, _)| rect.height == 2 && rect.width == 42));
+
+    // Desktop keeps the compact, content-sized popup.
+    state.compose(106, 30).expect("desktop agent menu");
+    assert!(state
+        .hits
+        .key_hint_rows
+        .iter()
+        .all(|(rect, _)| rect.height == 1 && rect.width < 42));
+}
