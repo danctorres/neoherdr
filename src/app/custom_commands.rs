@@ -236,25 +236,19 @@ impl App {
             height: binding.height,
         };
         if let Some(argv) = &binding.argv {
-            if !self.user_shell_executable_resolves(&argv[0]) {
+            let (env, env_cwd) = self.custom_command_env();
+            // A relative argv[0] resolves against the focused pane's directory
+            // the popup starts in (the server's own without one).
+            let launch_cwd = env_cwd.clone().or_else(|| std::env::current_dir().ok());
+            if self.user_shell_executable_missing(&argv[0], launch_cwd.as_deref()) {
                 let notice = crate::platform::exit_notice_argv(&format!(
                     "[herdr] {} not found on PATH — press Enter to close",
                     argv[0]
                 ));
-                return self.spawn_popup_argv_command(
-                    &notice,
-                    None,
-                    self.custom_command_env().0,
-                    geometry,
-                );
+                return self.spawn_popup_argv_command(&notice, env_cwd, env, geometry);
             }
             let launch_argv = self.user_shell_launch_argv(argv);
-            self.spawn_popup_argv_command(
-                &launch_argv,
-                None,
-                self.custom_command_env().0,
-                geometry,
-            )?;
+            self.spawn_popup_argv_command(&launch_argv, env_cwd, env, geometry)?;
             let popup_terminal = self
                 .state
                 .popup_pane
@@ -304,11 +298,9 @@ impl App {
         };
         let argv = match &binding.argv {
             Some(argv) => self.user_shell_launch_argv(argv),
-            None => binding
-                .command
-                .split_whitespace()
-                .map(str::to_string)
-                .collect(),
+            // A `[[keys.command]]` string runs through the shell, like the
+            // `pane` and `popup` types.
+            None => crate::platform::custom_command_shell_argv(&binding.command),
         };
         let (tab_idx, mut terminal, runtime) = self
             .state

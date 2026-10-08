@@ -146,6 +146,13 @@ pub(crate) fn pane_custom_command_pty_builder(command: &str) -> portable_pty::Co
     pane_custom_command_pty_builder_platform(command)
 }
 
+/// Argv running the `[[keys.command]]` string `command` through the system
+/// shell, the way `type = "pane"` and `type = "popup"` commands run.
+#[cfg(not(windows))]
+pub(crate) fn custom_command_shell_argv(command: &str) -> Vec<String> {
+    vec!["/bin/sh".to_owned(), "-c".to_owned(), command.to_owned()]
+}
+
 pub(crate) fn apply_pane_runtime_marker(command: &mut portable_pty::CommandBuilder) {
     apply_pane_runtime_marker_platform(command);
 }
@@ -162,6 +169,12 @@ pub(crate) fn normalize_cwd_for_launch(path: &std::path::Path) -> std::path::Pat
     normalize_cwd_for_launch_platform(path)
 }
 
+/// Whether `executable` names a file path (relative or absolute) instead of a
+/// command looked up on `PATH`.
+pub(crate) fn executable_is_path(executable: &str) -> bool {
+    executable.contains(std::path::MAIN_SEPARATOR)
+}
+
 /// Whether `executable` runs as a command: a path to a file, or a bare name
 /// resolving to a file in one of `PATH`'s directories.
 pub(crate) fn executable_on_path(executable: &str) -> bool {
@@ -174,7 +187,7 @@ pub(crate) fn executable_on_search_path(
     executable: &str,
     search_path: Option<&std::ffi::OsStr>,
 ) -> bool {
-    if executable.contains(std::path::MAIN_SEPARATOR) {
+    if executable_is_path(executable) {
         return std::path::Path::new(executable).is_file();
     }
     search_path.is_some_and(|search_path| {

@@ -1332,6 +1332,13 @@ impl ClientShellState {
         self.key_hint = None;
     }
 
+    /// Closes any open which-key menu and its hint, for paths other than a
+    /// key press that take the shell out of prefix mode.
+    pub(super) fn leave_key_menu(&mut self) {
+        self.active_key_group = None;
+        self.clear_key_hint();
+    }
+
     pub(super) fn navigation_workspace_entries(
         &self,
         snapshot: &ClientShellSnapshot,
@@ -1439,6 +1446,8 @@ impl ClientShellState {
         if self.mode == ClientShellMode::Copy {
             self.mode = ClientShellMode::Terminal;
         }
+        // An open menu belongs to the projection being replaced.
+        self.leave_key_menu();
         self.reset_copy_pipeline();
         self.copy_feedback = None;
         self.copy_feedback_deadline = None;
@@ -1556,6 +1565,7 @@ impl ClientShellState {
                 )
             {
                 self.mode = ClientShellMode::Terminal;
+                self.leave_key_menu();
             }
         }
         let tab_layout_changed = self.snapshot.as_deref().is_none_or(|current| {

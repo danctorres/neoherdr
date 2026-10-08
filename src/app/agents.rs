@@ -426,7 +426,7 @@ impl App {
         let agent = crate::detect::parse_agent_label(kind)
             .ok_or_else(|| AgentOpenTabError::UnsupportedKind(kind.to_owned()))?;
         let executable = crate::detect::interactive_agent_executable(agent);
-        if !self.user_shell_executable_resolves(executable) {
+        if self.user_shell_executable_missing(executable, None) {
             return Err(AgentOpenTabError::NotInstalled(executable.to_owned()));
         }
         let argv = crate::pane::user_shell_launch_argv(

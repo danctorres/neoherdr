@@ -72,9 +72,11 @@ fn user_shell_flavor(shell: &str) -> Option<UserShellFlavor> {
 }
 
 impl UserShellFlavor {
+    /// Single-quotes every word, even ones a POSIX shell would leave alone:
+    /// zsh expands an unquoted leading `=` (`=ls` becomes `/bin/ls`).
     fn quote(self, value: &str) -> String {
         match self {
-            Self::Posix => shell_quote(value),
+            Self::Posix => format!("'{}'", value.replace('\'', r"'\''")),
             // Inside fish single quotes, `\\` and `\'` are the only escapes.
             Self::Fish => format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'")),
         }
@@ -771,8 +773,8 @@ mod tests {
     #[test]
     fn user_shell_launch_execs_quoted_argv_through_an_interactive_shell() {
         assert_eq!(
-            user_shell_launch_argv(Some("/bin/zsh"), false, &strings(&["gh", "dash"])),
-            strings(&["/bin/zsh", "-i", "-c", "exec gh dash"])
+            user_shell_launch_argv(Some("/bin/zsh"), false, &strings(&["gh", "dash", "=ls"])),
+            strings(&["/bin/zsh", "-i", "-c", "exec 'gh' 'dash' '=ls'"])
         );
         assert_eq!(
             user_shell_launch_argv(Some("/usr/bin/bash"), true, &strings(&["my tool", "it's"])),
@@ -787,6 +789,31 @@ mod tests {
         assert_eq!(
             user_shell_launch_argv(Some("fish"), false, &strings(&[r"a\b", "it's"])),
             strings(&["fish", "-i", "-c", r"exec 'a\\b' 'it\'s'"])
+        );
+    }
+
+    #[test]
+    fn zsh_launch_passes_equals_leading_words_unchanged() {
+        let Some(zsh) = ["/bin/zsh", "/usr/bin/zsh"]
+            .into_iter()
+            .find(|zsh| Path::new(zsh).is_file())
+        else {
+            return;
+        };
+        let zdotdir = std::env::temp_dir().join(format!("herdr-zsh-equals-{}", std::process::id()));
+        std::fs::create_dir_all(&zdotdir).unwrap();
+        let argv = user_shell_launch_argv(Some(zsh), false, &strings(&["printf", "%s", "=ls"]));
+        let output = std::process::Command::new(&argv[0])
+            .args(&argv[1..])
+            .env("ZDOTDIR", &zdotdir)
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        let _ = std::fs::remove_dir_all(&zdotdir);
+        assert!(output.status.success(), "{output:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stdout).ends_with("=ls"),
+            "{output:?}"
         );
     }
 

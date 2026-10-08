@@ -1344,6 +1344,22 @@ pub(crate) fn pane_custom_command_pty_builder_platform(
     pane_custom_command_pty_builder_with_comspec(command, std::env::var_os("ComSpec"))
 }
 
+/// Argv running the `[[keys.command]]` string `command` through `cmd.exe`,
+/// the way `type = "pane"` and `type = "popup"` commands run. `/s` makes
+/// cmd.exe drop exactly the outer quotes the argv quoting adds around
+/// `command`.
+pub(crate) fn custom_command_shell_argv(command: &str) -> Vec<String> {
+    vec![
+        raw_command_shell(std::env::var_os("ComSpec"))
+            .to_string_lossy()
+            .into_owned(),
+        "/d".to_owned(),
+        "/s".to_owned(),
+        "/c".to_owned(),
+        command.to_owned(),
+    ]
+}
+
 fn pane_custom_command_pty_builder_with_comspec(
     command: &str,
     comspec: Option<std::ffi::OsString>,

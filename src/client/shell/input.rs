@@ -702,7 +702,11 @@ impl ClientShellState {
                                     self.builtin_action_available(*action)
                                 }
                                 crate::input::KeybindMatch::PluginAction(action) => {
-                                    self.plugin_action_available(action)
+                                    // Until plugin.list answers, let the server
+                                    // reject missing or disabled plugins rather
+                                    // than dropping the key.
+                                    self.plugin_actions.is_none()
+                                        || self.plugin_action_available(action)
                                 }
                                 _ => true,
                             })

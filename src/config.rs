@@ -186,7 +186,19 @@ impl Config {
         let keybinds = self.keybinds();
         let mut keys = self.keys.local_profile(&keybinds);
         keys.set_prefixes(&self.prefix_keys());
-        let tui_commands = self.tui_command_configs();
+        // Generation-1 clients have no `type = "tab"` and reject the whole
+        // profile on it; the client invokes the endpoint command by id, so
+        // `pane` carries the same entry, as in the command manifest.
+        let tui_commands = self
+            .tui_command_configs()
+            .into_iter()
+            .map(|mut command| {
+                if command.action_type == CommandKeybindType::Tab {
+                    command.action_type = CommandKeybindType::Pane;
+                }
+                command
+            })
+            .collect::<Vec<_>>();
         if !tui_commands.is_empty() {
             keys.set_commands(tui_commands);
         }
@@ -270,6 +282,46 @@ prefix = ["ctrl+space", "ctrl+s"]
 
         let keybinds = keybindings_from_profile_toml(&profile).unwrap();
         assert_eq!(keybinds.prefix, config.prefix_keys());
+    }
+
+    #[test]
+    fn local_keybindings_profile_publishes_tab_tuis_as_pane_entries() {
+        let config = Config {
+            tuis: vec![TuiConfig {
+                id: "nvim".into(),
+                key: "n".into(),
+                title: "Nvim".into(),
+                description: None,
+                command: vec!["nvim".into()],
+                platforms: None,
+                kind: TuiKind::Tab,
+                width: None,
+                height: None,
+            }],
+            ..Config::default()
+        };
+
+        let profile = config.local_keybindings_profile_toml().unwrap();
+
+        // Generation-1 clients reject the whole profile on an unknown
+        // command type, so every published type must be one they know.
+        let value: toml::Value = toml::from_str(&profile).unwrap();
+        let types = value["keys"]["command"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|command| command["type"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(types, ["pane"]);
+
+        let keybinds = keybindings_from_profile_toml(&profile).unwrap();
+        let open = keybinds
+            .keybinds
+            .groups
+            .iter()
+            .find(|group| group.id == "open")
+            .expect("TUI menu");
+        assert!(open.members.iter().any(|member| member.label == "n"));
     }
 
     #[test]

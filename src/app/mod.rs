@@ -76,6 +76,9 @@ pub(crate) struct AppPolicy {
     pub(crate) persist_session: bool,
     pub(crate) persist_plugin_registry: bool,
     pub(crate) background_updates: bool,
+    /// Probe the user shell's `PATH` at startup and after each config reload,
+    /// so the first TUI or agent launch already resolves through it.
+    pub(crate) probe_user_shell_path: bool,
 }
 
 impl AppPolicy {
@@ -84,6 +87,7 @@ impl AppPolicy {
         persist_session: true,
         persist_plugin_registry: true,
         background_updates: true,
+        probe_user_shell_path: true,
     };
 
     #[cfg(test)]
@@ -92,6 +96,7 @@ impl AppPolicy {
         persist_session: false,
         persist_plugin_registry: false,
         background_updates: false,
+        probe_user_shell_path: false,
     };
 
     #[cfg(unix)]
@@ -100,6 +105,7 @@ impl AppPolicy {
         persist_session: true,
         persist_plugin_registry: true,
         background_updates: true,
+        probe_user_shell_path: true,
     };
 }
 
@@ -707,6 +713,9 @@ impl App {
         app.configure_tab_bar_status(&config.ui.tab_bar_right, &config.ui.tab_bar_right_separator);
         app.configure_window_title(&config.ui.window_title);
         app.refresh_restored_workspace_git_metadata();
+        if app.policy.probe_user_shell_path {
+            app.start_user_shell_path_probe();
+        }
         Ok(app)
     }
 
@@ -833,8 +842,6 @@ impl App {
     }
 
     pub(crate) fn reload_config(&mut self) -> crate::config::ConfigReloadReport {
-        // Shell rc files may have changed along with the config.
-        self.user_shell_path.invalidate();
         self.apply_config_from_disk(true)
     }
 
@@ -871,6 +878,13 @@ impl App {
         self.endpoint_commands =
             custom_commands::EndpointCommandRegistry::new(&self.state.keybinds.custom_commands);
         self.sync_toast_deadline(previous_toast);
+        // Shell rc files may have changed along with the config, and the
+        // config may select another shell: forget the probed PATH and probe
+        // the shell now configured.
+        self.user_shell_path.invalidate();
+        if self.policy.probe_user_shell_path {
+            self.start_user_shell_path_probe();
+        }
         report
     }
 
@@ -3253,7 +3267,7 @@ mod tests {
                     "/bin/sh".to_string(),
                     "-i".into(),
                     "-c".into(),
-                    "exec pi".into()
+                    "exec 'pi'".into()
                 ][..]
             )
         );
@@ -3264,6 +3278,256 @@ mod tests {
             None => std::env::remove_var("PATH"),
         }
         let _ = std::fs::remove_dir_all(shell_dir);
+        let _ = std::fs::remove_dir_all(project);
+    }
+
+    #[cfg(unix)]
+    async fn next_user_shell_probe(app: &mut App) {
+        loop {
+            let event = tokio::time::timeout(Duration::from_secs(5), app.event_rx.recv())
+                .await
+                .expect("probe result")
+                .expect("event channel open");
+            let probed = matches!(event, AppEvent::UserShellPathProbed { .. });
+            app.handle_internal_event(event);
+            if probed {
+                return;
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    // The env lock must stay held while awaiting the probe so no other test
+    // changes the config path underneath it.
+    #[allow(clippy::await_holding_lock)]
+    async fn user_shell_path_is_probed_at_startup_and_for_the_shell_a_reload_selects() {
+        let _guard = config_env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let path = temp_config_path("reload-config-user-shell-probe");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            "[terminal]\ndefault_shell = \"/bin/reloaded-sh\"\nshell_mode = \"non_login\"\n",
+        )
+        .unwrap();
+        std::env::set_var(crate::config::CONFIG_PATH_ENV_VAR, &path);
+
+        let mut config = Config::default();
+        config.terminal.default_shell = "/bin/sh".into();
+        let (_api_tx, api_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(
+            &config,
+            AppPolicy {
+                probe_user_shell_path: true,
+                ..AppPolicy::TEST
+            },
+            None,
+            api_rx,
+            crate::api::EventHub::default(),
+        );
+        // The probe runs before anything asks to resolve an executable.
+        assert!(app.user_shell_path.probe_started_for_test());
+        next_user_shell_probe(&mut app).await;
+
+        let probed_shells = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let shells = probed_shells.clone();
+        app.user_shell_path =
+            user_shell::UserShellPath::new(std::sync::Arc::new(move |shell, _login| {
+                shells
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .push(shell.to_owned());
+                Some("/probed-after-reload".into())
+            }));
+        let report = app.reload_config();
+        assert_eq!(report.status, crate::config::ConfigReloadStatus::Applied);
+        next_user_shell_probe(&mut app).await;
+
+        assert_eq!(
+            *probed_shells
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+            vec!["/bin/reloaded-sh".to_string()]
+        );
+        assert_eq!(
+            app.user_shell_path.probed_path_for_test(),
+            Some(&std::ffi::OsString::from("/probed-after-reload"))
+        );
+
+        std::env::remove_var(crate::config::CONFIG_PATH_ENV_VAR);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn agent_tab_opens_while_the_user_shell_probe_is_pending() {
+        let _guard = config_env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let original_path = std::env::var_os("PATH");
+        std::env::set_var("PATH", unique_temp_path("agent-tab-probe-pending-path"));
+        let (mut app, project) = agent_tab_test_app("agent-tab-probe-pending");
+        app.state.default_shell = "/bin/sh".into();
+        app.state.shell_mode = crate::config::ShellModeConfig::NonLogin;
+
+        // `pi` is not on the server's PATH and the shell's PATH is not known
+        // yet: the tab opens and a missing agent shows the exit notice.
+        let opened: serde_json::Value =
+            serde_json::from_str(&app.handle_api_request(open_agent_tab_request("pi"))).unwrap();
+        match original_path {
+            Some(path) => std::env::set_var("PATH", path),
+            None => std::env::remove_var("PATH"),
+        }
+
+        assert_eq!(opened["result"]["type"], "tab_created", "{opened}");
+        assert_eq!(
+            agent_tab_terminal(&app).hold_on_failure.as_deref(),
+            Some("pi")
+        );
+
+        crate::app::api::test_support::shutdown_test_runtimes(&mut app);
+        let _ = std::fs::remove_dir_all(project);
+    }
+
+    #[cfg(unix)]
+    fn tui_binding(
+        action: crate::config::CustomCommandAction,
+        command: &str,
+        argv: Option<&[&str]>,
+    ) -> crate::config::CustomCommandKeybind {
+        crate::config::CustomCommandKeybind {
+            bindings: crate::config::ActionKeybinds::prefix("z"),
+            label: "prefix+z".into(),
+            command: command.into(),
+            argv: argv.map(|argv| argv.iter().map(|arg| (*arg).to_owned()).collect()),
+            action,
+            description: None,
+            width: None,
+            height: None,
+            group: None,
+        }
+    }
+
+    #[cfg(unix)]
+    fn popup_launch_argv(app: &App) -> Vec<String> {
+        let popup = app.state.popup_pane.as_ref().expect("popup open");
+        app.state.terminals[&popup.terminal_id]
+            .launch_argv
+            .clone()
+            .expect("popup launch argv")
+    }
+
+    #[cfg(unix)]
+    fn sh_launch(command: &str) -> Vec<String> {
+        vec![
+            "/bin/sh".to_owned(),
+            "-i".to_owned(),
+            "-c".to_owned(),
+            command.to_owned(),
+        ]
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn popup_tui_launches_through_the_shell_until_the_probe_finds_it_missing() {
+        let (mut app, project) = agent_tab_test_app("popup-tui-probe-pending");
+        app.state.default_shell = "/bin/sh".into();
+        app.state.shell_mode = crate::config::ShellModeConfig::NonLogin;
+        let tool = "herdr-popup-tui-not-on-server-path";
+        let binding = tui_binding(
+            crate::config::CustomCommandAction::Popup,
+            "tui:tool",
+            Some(&[tool]),
+        );
+
+        // Only the user shell's rc files may put the tool on PATH, and its
+        // PATH is still being probed: launch instead of reporting it missing.
+        app.execute_custom_command_binding(&binding, None).unwrap();
+        assert_eq!(
+            popup_launch_argv(&app),
+            sh_launch(&format!("exec '{tool}'"))
+        );
+        let popup = app.state.popup_pane.clone().unwrap();
+        assert_eq!(
+            app.state.terminals[&popup.terminal_id]
+                .hold_on_failure
+                .as_deref(),
+            Some(tool)
+        );
+        assert!(app.close_popup_pane());
+
+        // Once the shell's PATH is known not to have it, say so up front.
+        app.user_shell_path.set_probed_path_for_test(None);
+        app.execute_custom_command_binding(&binding, None).unwrap();
+        assert_eq!(
+            popup_launch_argv(&app),
+            crate::platform::exit_notice_argv(&format!(
+                "[herdr] {tool} not found on PATH — press Enter to close"
+            ))
+        );
+
+        crate::app::api::test_support::shutdown_test_runtimes(&mut app);
+        let _ = std::fs::remove_dir_all(project);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn relative_popup_tui_resolves_against_the_focused_pane_cwd() {
+        let (mut app, project) = agent_tab_test_app("popup-tui-relative");
+        app.state.default_shell = "/bin/sh".into();
+        app.state.shell_mode = crate::config::ShellModeConfig::NonLogin;
+        app.user_shell_path.set_probed_path_for_test(None);
+        std::fs::create_dir_all(project.join("bin")).unwrap();
+        std::fs::write(project.join("bin").join("dev-tui"), "").unwrap();
+
+        let found = tui_binding(
+            crate::config::CustomCommandAction::Popup,
+            "tui:dev",
+            Some(&["./bin/dev-tui"]),
+        );
+        app.execute_custom_command_binding(&found, None).unwrap();
+        assert_eq!(popup_launch_argv(&app), sh_launch("exec './bin/dev-tui'"));
+        assert!(app.close_popup_pane());
+
+        let missing = tui_binding(
+            crate::config::CustomCommandAction::Popup,
+            "tui:other",
+            Some(&["./bin/other-tui"]),
+        );
+        app.execute_custom_command_binding(&missing, None).unwrap();
+        assert_eq!(
+            popup_launch_argv(&app),
+            crate::platform::exit_notice_argv(
+                "[herdr] ./bin/other-tui not found on PATH — press Enter to close"
+            )
+        );
+
+        crate::app::api::test_support::shutdown_test_runtimes(&mut app);
+        let _ = std::fs::remove_dir_all(project);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn tab_command_string_runs_through_the_shell_without_word_splitting() {
+        let (mut app, project) = agent_tab_test_app("tab-command-string");
+        let command = "printf '%s\\n' 'my notes.md' && echo \"$HOME\"";
+        let binding = tui_binding(crate::config::CustomCommandAction::Tab, command, None);
+
+        app.execute_custom_command_binding(&binding, None).unwrap();
+
+        assert_eq!(app.state.workspaces[0].tabs.len(), 2);
+        assert_eq!(
+            agent_tab_terminal(&app).launch_argv.as_deref(),
+            Some(&crate::platform::custom_command_shell_argv(command)[..])
+        );
+        assert_eq!(
+            crate::platform::custom_command_shell_argv(command),
+            vec!["/bin/sh".to_string(), "-c".into(), command.into()]
+        );
+
+        crate::app::api::test_support::shutdown_test_runtimes(&mut app);
         let _ = std::fs::remove_dir_all(project);
     }
 
@@ -3368,6 +3632,8 @@ mod tests {
         app.state.ensure_test_terminals();
         app.state.active = Some(0);
         app.state.selected = 0;
+        // The user shell's PATH is known and adds nothing.
+        app.user_shell_path.set_probed_path_for_test(None);
         let _guard = config_env_lock()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
