@@ -30,6 +30,8 @@
 - **failed panes stay open** — an agent or tui that exits with an error keeps its output on screen until you press enter.
 - **launching through your shell** — agents and tuis start through your interactive shell, so rc-file `PATH` and exported keys reach them.
 - **bundled worktrunk** — `prefix+g` then `s`, `l`, or `m` drives the [`wt`](https://worktrunk.dev) worktree cli; without `wt`, the popup offers to install it.
+- **touch reaches the keymap** — on a phone-width terminal the header gains a `keys` button that opens the which-key menu, and every menu row is a tap target (clicks work on the desktop too).
+- **phone notifications** — the [`notify` plugin](plugins/notify/README.md) pushes to a url you choose (ntfy, for example) when an agent needs your input or finishes somewhere you are not looking.
 - **runs beside upstream** — the command is `neoherdr` and its config, sessions, and sockets live in `~/.config/neoherdr`.
 
 everything else is upstream herdr.
