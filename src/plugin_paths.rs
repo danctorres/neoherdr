@@ -21,7 +21,24 @@ pub(crate) fn is_plugin_rooted_at(
     dir: &Path,
 ) -> bool {
     let root = Path::new(&plugin.plugin_root);
-    root == dir || dir.canonicalize().is_ok_and(|dir| root == dir)
+    root == dir || canonicalize_existing_prefix(dir).is_some_and(|dir| root == dir)
+}
+
+/// Canonicalizes the deepest existing ancestor of `path` and re-appends the
+/// missing tail, so a deleted directory under a symlinked parent still
+/// resolves to the path its canonical form had.
+fn canonicalize_existing_prefix(path: &Path) -> Option<PathBuf> {
+    let mut missing = Vec::new();
+    let mut current = path;
+    loop {
+        if let Ok(canonical) = current.canonicalize() {
+            let mut resolved = crate::platform::plugin_runtime_path(&canonical);
+            resolved.extend(missing.iter().rev());
+            return Some(resolved);
+        }
+        missing.push(current.file_name()?);
+        current = current.parent()?;
+    }
 }
 
 pub(crate) fn managed_checkout_path(plugin_id: &str) -> PathBuf {
@@ -96,7 +113,7 @@ fn legacy_plugin_config_dirs(plugin_id: &str) -> Vec<PathBuf> {
     let plugins_dir = managed_plugins_dir();
     let old_unhashed = (!matches!(
         plugin_id,
-        "config" | "github" | "github-installations" | ".locks"
+        "config" | "github" | "github-installations" | ".locks" | "builtin"
     ))
     .then(|| plugins_dir.join(plugin_id));
     let current_hashed =
@@ -159,6 +176,47 @@ fn copy_dir_all(source: &Path, destination: &Path) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_config_dirs_never_point_at_the_bundled_plugin_tree() {
+        let _guard = crate::config::test_config_env_lock().lock().unwrap();
+        let bundled_tree = managed_plugins_dir().join("builtin");
+        assert!(!legacy_plugin_config_dirs("builtin").contains(&bundled_tree));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn deleted_plugin_root_under_symlinked_dir_still_matches() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let base = std::env::temp_dir().join(format!(
+            "herdr-rooted-symlink-{}-{nanos}",
+            std::process::id()
+        ));
+        let real = base.join("real");
+        let link = base.join("link");
+        let real_root = real.join("builtin").join("demo");
+        std::fs::create_dir_all(&real_root).unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        std::fs::write(
+            real_root.join("herdr-plugin.toml"),
+            "id = \"demo\"\nname = \"Demo\"\nversion = \"0.1.0\"\nmin_herdr_version = \"0.6.10\"\nplatforms = [\"linux\", \"macos\"]\n",
+        )
+        .unwrap();
+        let linked_root = link.join("builtin").join("demo");
+        let plugin =
+            crate::app::load_plugin_manifest(&linked_root.display().to_string(), true).unwrap();
+        std::fs::remove_dir_all(&real_root).unwrap();
+
+        assert!(is_plugin_rooted_at(&plugin, &linked_root));
+        assert!(!is_plugin_rooted_at(
+            &plugin,
+            &link.join("builtin").join("other")
+        ));
+        let _ = std::fs::remove_dir_all(base);
+    }
 
     #[test]
     fn installations_never_reuse_or_move_existing_files() {

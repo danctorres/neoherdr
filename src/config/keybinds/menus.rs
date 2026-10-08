@@ -13,12 +13,13 @@
 use std::borrow::Cow;
 use std::sync::OnceLock;
 
+use crossterm::event::KeyCode;
 use tracing::warn;
 
 use super::{
-    format_key_combo, normalize_key_combo, parse_binding_string, parse_key_combo, ActionKeybinds,
-    BindingRegistry, BindingSource, BindingTrigger, CommandKeybindConfig, CommandKeybindType,
-    Keybinds, ParsedBinding, ResolvedBinding,
+    format_key_combo, normalize_key_combo, parse_action_bindings, parse_binding_string,
+    parse_key_combo, ActionKeybinds, BindingConfig, BindingRegistry, BindingSource, BindingTrigger,
+    CommandKeybindConfig, CommandKeybindType, KeyCombo, Keybinds, ParsedBinding, ResolvedBinding,
 };
 use crate::config::Config;
 
@@ -235,11 +236,17 @@ pub(super) fn group_is_defined(keybinds: &Keybinds, id: &str) -> bool {
     is_builtin_group(id) || keybinds.groups.iter().any(|group| group.id == id)
 }
 
+/// A menu member key, or `None` when it does not parse or is esc, which
+/// steps back out of an open menu.
+pub(super) fn parse_member_key(raw: &str) -> Option<KeyCombo> {
+    parse_key_combo(raw).filter(|combo| combo.0 != KeyCode::Esc)
+}
+
 /// Direct member keys parsed without the prefix registry: a menu's keys only
 /// have to be unique within the menu.
 pub(super) fn parse_group_member_bindings(
     field: &str,
-    config: &super::BindingConfig,
+    config: &BindingConfig,
     diagnostics: &mut Vec<String>,
 ) -> ActionKeybinds {
     let mut bindings = Vec::new();
@@ -248,8 +255,14 @@ pub(super) fn parse_group_member_bindings(
         if raw.is_empty() {
             continue;
         }
-        let Some(combo) = parse_key_combo(raw) else {
-            let diag = format!("invalid keybinding: {field} = {raw:?}; disabling binding");
+        let Some(combo) = parse_member_key(raw) else {
+            let diag = if parse_key_combo(raw).is_some() {
+                format!(
+                    "reserved keybinding: {field} = {raw:?}; esc leaves the menu; disabling binding"
+                )
+            } else {
+                format!("invalid keybinding: {field} = {raw:?}; disabling binding")
+            };
             warn!(message = %diag, "config diagnostic");
             diagnostics.push(diag);
             continue;
@@ -262,11 +275,52 @@ pub(super) fn parse_group_member_bindings(
     ActionKeybinds { bindings }
 }
 
+/// Menu opener keys. Menus open from prefix mode only, so a key without the
+/// prefix is reported and dropped before it can reserve a direct chord.
+pub(super) fn parse_menu_opener_bindings(
+    field: &str,
+    config: &BindingConfig,
+    registry: &mut BindingRegistry,
+    diagnostics: &mut Vec<String>,
+    source: BindingSource,
+) -> ActionKeybinds {
+    let mut prefix_values = Vec::new();
+    for raw in config.values() {
+        let raw = raw.trim();
+        if raw.is_empty() {
+            continue;
+        }
+        if let Some(ParsedBinding::Single(binding)) = parse_binding_string(raw) {
+            if binding.trigger.is_direct() {
+                let diag = format!(
+                    "menu opener without prefix: {field} = {:?}; menus open from prefix mode, use \"prefix+{}\"; disabling binding",
+                    binding.label, binding.label
+                );
+                warn!(message = %diag, "config diagnostic");
+                diagnostics.push(diag);
+                continue;
+            }
+        }
+        prefix_values.push(raw.to_owned());
+    }
+    parse_action_bindings(
+        field,
+        &BindingConfig::Many(prefix_values),
+        registry,
+        diagnostics,
+        source,
+    )
+}
+
 /// Projects the menus recorded by [`add_group`] and the parsed menu
 /// `entries` into the final menu list. Built-in menus come first, then user
 /// menus in config order. In each menu, user entries come first, then the
 /// built-in entries and bundled plugin entries whose key no user entry took.
-pub(super) fn resolve_groups(keybinds: &mut Keybinds, entries: Vec<MenuEntry>) {
+pub(super) fn resolve_groups(
+    keybinds: &mut Keybinds,
+    entries: Vec<MenuEntry>,
+    diagnostics: &mut Vec<String>,
+) {
     let mut groups = std::mem::take(&mut keybinds.groups);
     groups.sort_by_key(|group| builtin_group_position(&group.id).unwrap_or(usize::MAX));
     let user_member_keys: std::collections::HashSet<(&str, super::KeyCombo)> = entries
@@ -319,8 +373,19 @@ pub(super) fn resolve_groups(keybinds: &mut Keybinds, entries: Vec<MenuEntry>) {
         )
         .chain(bundled.iter())
         .filter(|entry| !overridden(entry));
+    let mut orphaned: Vec<&str> = Vec::new();
     for entry in ordered {
         let Some(group) = groups.iter_mut().find(|group| group.id == entry.group) else {
+            // Its opener had no usable key, so the menu was never added.
+            if entry.source == BindingSource::User && !orphaned.contains(&entry.group.as_str()) {
+                orphaned.push(entry.group.as_str());
+                let diag = format!(
+                    "orphan keybind group: keys.command entries in group {:?} have no menu opener; disabling bindings",
+                    entry.group
+                );
+                warn!(message = %diag, "config diagnostic");
+                diagnostics.push(diag);
+            }
             continue;
         };
         let Some(label) = entry.keys.label() else {
@@ -362,24 +427,56 @@ pub(super) fn report_shadowed_menu_openers(
     registry: &BindingRegistry,
     diagnostics: &mut Vec<String>,
 ) {
-    for (field, configured, effective) in [
+    for (field, id, configured, effective) in [
         (
             "workspace_menu",
+            WORKSPACE_GROUP,
             &config.keys.workspace_menu,
             &keybinds.workspace_menu,
         ),
-        ("tab_menu", &config.keys.tab_menu, &keybinds.tab_menu),
-        ("pane_menu", &config.keys.pane_menu, &keybinds.pane_menu),
-        ("agent_menu", &config.keys.agent_menu, &keybinds.agent_menu),
-        ("git_menu", &config.keys.git_menu, &keybinds.git_menu),
+        (
+            "tab_menu",
+            TAB_GROUP,
+            &config.keys.tab_menu,
+            &keybinds.tab_menu,
+        ),
+        (
+            "pane_menu",
+            PANE_GROUP,
+            &config.keys.pane_menu,
+            &keybinds.pane_menu,
+        ),
+        (
+            "agent_menu",
+            AGENT_GROUP,
+            &config.keys.agent_menu,
+            &keybinds.agent_menu,
+        ),
+        (
+            "git_menu",
+            GIT_GROUP,
+            &config.keys.git_menu,
+            &keybinds.git_menu,
+        ),
         (
             "system_menu",
+            SYSTEM_GROUP,
             &config.keys.system_menu,
             &keybinds.system_menu,
         ),
-        ("tui_menu", &config.keys.tui_menu, &keybinds.tui_menu),
+        (
+            "tui_menu",
+            TUI_GROUP,
+            &config.keys.tui_menu,
+            &keybinds.tui_menu,
+        ),
     ] {
         if config.keys.key_field_is_user_configured(field) || !effective.bindings.is_empty() {
+            continue;
+        }
+        // A menu without entries, such as the TUI menu with no `[[tui]]`
+        // configured, is not shown, so there is nothing to reach.
+        if !keybinds.groups.iter().any(|group| group.id == id) {
             continue;
         }
         for raw in configured.values() {
@@ -1033,5 +1130,155 @@ action = "split_vertical"
             assert_eq!(user.description, builtin.description);
             assert_eq!(members(user), members(&builtin), "{}", builtin.id);
         }
+    }
+
+    fn has_diagnostic(diagnostics: &[String], parts: &[&str]) -> bool {
+        diagnostics
+            .iter()
+            .any(|diag| parts.iter().all(|part| diag.contains(part)))
+    }
+
+    #[test]
+    fn esc_menu_entry_key_is_reserved_with_a_diagnostic() {
+        let config: Config = toml::from_str(
+            r#"
+[[keys.command]]
+key = "esc"
+group = "pane"
+command = "echo esc"
+"#,
+        )
+        .unwrap();
+        let diagnostics = config.collect_diagnostics();
+        assert!(
+            has_diagnostic(
+                &diagnostics,
+                &["reserved keybinding: keys.command[0].key", "esc"]
+            ),
+            "{diagnostics:?}"
+        );
+        let keybinds = config.keybinds();
+        let pane = keybinds
+            .groups
+            .iter()
+            .find(|group| group.id == PANE_GROUP)
+            .unwrap();
+        assert!(!pane.members.iter().any(|member| member.label == "esc"));
+        assert!(keybinds.custom_commands.is_empty());
+    }
+
+    #[test]
+    fn menu_openers_without_the_prefix_are_rejected_and_free_their_chord() {
+        let config: Config = toml::from_str(
+            r#"
+[keys]
+workspace_menu = "alt+w"
+
+[[keys.command]]
+key = "ctrl+g"
+type = "group"
+group = "scripts"
+
+[[keys.command]]
+key = "b"
+group = "scripts"
+command = "make"
+
+[[keys.command]]
+key = "ctrl+g"
+command = "lazygit"
+"#,
+        )
+        .unwrap();
+        let diagnostics = config.collect_diagnostics();
+        for field in ["keys.workspace_menu", "keys.command[0].key"] {
+            assert!(
+                has_diagnostic(&diagnostics, &["menu opener without prefix", field]),
+                "{field}: {diagnostics:?}"
+            );
+        }
+        let keybinds = config.keybinds();
+        assert!(keybinds.workspace_menu.bindings.is_empty());
+        assert!(crate::input::resolve_direct_binding(
+            &keybinds,
+            &crate::input::TerminalKey::new(KeyCode::Char('w'), KeyModifiers::ALT)
+        )
+        .is_none());
+        // The rejected opener no longer holds its chord.
+        match crate::input::resolve_direct_binding(
+            &keybinds,
+            &crate::input::TerminalKey::new(KeyCode::Char('g'), KeyModifiers::CONTROL),
+        ) {
+            Some(crate::input::KeybindMatch::Command(command)) => {
+                assert_eq!(command.command, "lazygit");
+            }
+            other => panic!("expected the direct command, got {other:?}"),
+        }
+        assert!(!keybinds.groups.iter().any(|group| group.id == "scripts"));
+        assert!(
+            has_diagnostic(&diagnostics, &["orphan keybind group", "\"scripts\""]),
+            "{diagnostics:?}"
+        );
+    }
+
+    #[test]
+    fn group_opener_without_a_key_is_reported_with_its_entries() {
+        let config: Config = toml::from_str(
+            r#"
+[[keys.command]]
+type = "group"
+group = "scripts"
+
+[[keys.command]]
+key = "b"
+group = "scripts"
+command = "make"
+"#,
+        )
+        .unwrap();
+        let diagnostics = config.collect_diagnostics();
+        assert!(
+            has_diagnostic(
+                &diagnostics,
+                &[
+                    "group opener missing key: keys.command[0].key",
+                    "\"scripts\""
+                ]
+            ),
+            "{diagnostics:?}"
+        );
+        assert!(
+            has_diagnostic(&diagnostics, &["orphan keybind group", "\"scripts\""]),
+            "{diagnostics:?}"
+        );
+    }
+
+    #[test]
+    fn shadowed_tui_menu_opener_is_reported_only_when_the_menu_is_shown() {
+        let text = "[keys]\nopen_notification_target = \"prefix+o\"\n";
+        let without_tuis: Config = toml::from_str(text).unwrap();
+        let diagnostics = without_tuis.collect_diagnostics();
+        assert!(
+            !has_diagnostic(&diagnostics, &["keys.tui_menu"]),
+            "{diagnostics:?}"
+        );
+
+        let mut with_tui: Config = toml::from_str(text).unwrap();
+        with_tui.tuis = vec![crate::config::TuiConfig {
+            id: "yazi".into(),
+            key: "f".into(),
+            title: "yazi".into(),
+            description: None,
+            command: vec!["yazi".into()],
+            platforms: None,
+            kind: crate::config::TuiKind::Popup,
+            width: None,
+            height: None,
+        }];
+        let diagnostics = with_tui.collect_diagnostics();
+        assert!(
+            has_diagnostic(&diagnostics, &["prefix+o", "keys.tui_menu"]),
+            "{diagnostics:?}"
+        );
     }
 }

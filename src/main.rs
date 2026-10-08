@@ -66,7 +66,7 @@ mod workspace;
 mod worktree;
 
 const DEFAULT_CONFIG: &str = r##"# herdr configuration
-# Place this file at ~/.config/herdr/config.toml
+# Place this file at ~/.config/neoherdr/config.toml
 
 # Show first-run notification setup on startup.
 # Missing also shows onboarding; set false after you've chosen.

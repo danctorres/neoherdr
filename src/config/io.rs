@@ -173,12 +173,13 @@ impl Config {
                         .collect(),
                     None,
                 ));
-                diagnostics.extend(config.collect_diagnostics());
+                // TUIs join the keymap, so attach them before validating it.
                 apply_tuis(
                     &mut config,
                     table.as_ref().and_then(|table| table.get("tui")),
                     &mut diagnostics,
                 );
+                diagnostics.extend(config.collect_diagnostics());
                 LoadedConfig {
                     config,
                     diagnostics,
@@ -965,6 +966,51 @@ command = ["bad"]
         let live = load_live_config_from_str(content).unwrap();
         assert!(!live.config.ui.confirm_close);
         assert_eq!(live.diagnostics, startup.diagnostics);
+    }
+
+    #[test]
+    fn startup_config_reports_tui_keybinding_conflicts() {
+        let loaded = Config::load_from_str(
+            r#"[[tui]]
+id = "lazygit"
+key = "g"
+title = "lazygit"
+command = ["lazygit"]
+
+[[tui]]
+id = "gitui"
+key = "g"
+title = "gitui"
+command = ["gitui"]
+"#,
+        );
+
+        assert!(
+            loaded.diagnostics.iter().any(|diagnostic| diagnostic
+                .starts_with("duplicate group member key: tui[1].key in group")),
+            "{:?}",
+            loaded.diagnostics
+        );
+    }
+
+    #[test]
+    fn unknown_keys_inside_tui_entries_are_reported_on_startup_and_reload() {
+        let content = r#"[[tui]]
+id = "lazygit"
+key = "g"
+title = "lazygit"
+command = ["lazygit"]
+widht = "80%"
+"#;
+        let expected = vec!["unknown config key tui[0].widht; ignoring key".to_string()];
+
+        let startup = Config::load_from_str(content);
+        assert_eq!(startup.config.tuis.len(), 1);
+        assert_eq!(startup.diagnostics, expected);
+
+        let live = load_live_config_from_str(content).unwrap();
+        assert_eq!(live.config.tuis.len(), 1);
+        assert_eq!(live.diagnostics, expected);
     }
 
     #[test]
