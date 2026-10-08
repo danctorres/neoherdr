@@ -170,6 +170,7 @@ pub(crate) fn render_key_hint(
     buffer: &mut Buffer,
     hint: &KeyHintState,
     palette: &Palette,
+    touch: bool,
 ) -> Option<(Rect, Vec<(Rect, usize)>)> {
     if !hint.visible || hint.bindings.is_empty() {
         return None;
@@ -182,6 +183,9 @@ pub(crate) fn render_key_hint(
     let shown = hint.bindings.len().min(max_rows.saturating_mul(2).max(1));
     let columns = if hint.bindings.len() > max_rows { 2 } else { 1 };
     let rows = shown.div_ceil(columns);
+    // Touch layout: the popup spans the screen and, when the menu is short
+    // enough, every entry gets a blank line so rows are easier to hit.
+    let row_height = if touch && rows * 2 <= max_rows { 2 } else { 1 };
     // Keys are padded to the widest key of their column so labels line up.
     let column = |col: usize| &hint.bindings[col * rows..((col + 1) * rows).min(shown)];
     let key_width = |col: usize| {
@@ -205,9 +209,11 @@ pub(crate) fn render_key_hint(
         .sum::<u16>()
         .saturating_add(2 * columns as u16 + 2)
         .max(display_width(&hint.title).saturating_add(4))
-        .max(10)
+        .max(if touch { screen.width } else { 10 })
         .min(screen.width.max(1));
-    let height = (rows as u16).saturating_add(2).min(screen.height.max(1));
+    let height = ((rows * row_height) as u16)
+        .saturating_add(2)
+        .min(screen.height.max(1));
     let x = screen
         .x
         .saturating_add(screen.width.saturating_sub(width) / 2);
@@ -232,7 +238,7 @@ pub(crate) fn render_key_hint(
     let mut row_hits = Vec::with_capacity(shown);
     for (position, (key, label)) in hint.bindings.iter().take(shown).enumerate() {
         let col = position / rows;
-        let row = (position % rows) as u16;
+        let row = ((position % rows) * row_height) as u16;
         let mut cell_x = inner.x;
         for already in 0..col {
             cell_x = cell_x.saturating_add(col_width(already) + 2);
@@ -245,7 +251,15 @@ pub(crate) fn render_key_hint(
         if cell_width == 0 {
             continue;
         }
-        row_hits.push((Rect::new(cell_x, row_y, cell_width, 1), position));
+        // The whole slot is the target, not only the text: the last column
+        // runs to the popup edge.
+        let hit_width = if col + 1 == columns {
+            inner.right().saturating_sub(cell_x)
+        } else {
+            cell_width.saturating_add(2)
+        };
+        let hit_height = (row_height as u16).min(inner.bottom().saturating_sub(row_y));
+        row_hits.push((Rect::new(cell_x, row_y, hit_width, hit_height), position));
         put_text(buffer, cell_x, row_y, cell_width, key, key_style);
         let label_x = cell_x.saturating_add(key_width(col) + 2);
         let label_width = inner.right().saturating_sub(label_x);

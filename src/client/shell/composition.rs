@@ -710,7 +710,12 @@ impl ClientShellState {
         if self.key_hint.as_ref().is_some_and(|hint| hint.visible) {
             let mut composed = frame.to_ratatui_buffer()?;
             let area = self.key_hint.as_ref().and_then(|hint| {
-                render::render_key_hint(&mut composed, hint, &self.config.palette)
+                render::render_key_hint(
+                    &mut composed,
+                    hint,
+                    &self.config.palette,
+                    !layout.mobile_header.is_empty(),
+                )
             });
             if let Some((area, rows)) = area {
                 occlusion.cover(area);
