@@ -11,6 +11,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -35,6 +36,17 @@ def herdr(*args):
     try:
         return json.loads(out.stdout).get("result")
     except ValueError:
+        return None
+
+
+def api(method, **params):
+    """Call an API method the CLI has no command for."""
+    try:
+        with socket.socket(socket.AF_UNIX) as sock:
+            sock.connect(os.environ["HERDR_SOCKET_PATH"])
+            sock.sendall((json.dumps({"id": PLUGIN, "method": method, "params": params}) + "\n").encode())
+            return json.loads(sock.makefile().readline()).get("result")
+    except (KeyError, OSError, ValueError):
         return None
 
 
@@ -213,6 +225,41 @@ def open_view(parent, panes, src, label):
         herdr("pane", "rename", pane, label)
 
 
+def even_splits(node, mine, path, out):
+    """Return how many panes under `node` are in `mine`, and how many there are.
+
+    Appends to `out` the path and ratio of each split that has only `mine`
+    panes under it and does not divide them evenly.
+    """
+    if node.get("type") != "split":
+        return int(node.get("pane_id") in mine), 1
+    first_mine, first = even_splits(node["first"], mine, path + [False], out)
+    second_mine, second = even_splits(node["second"], mine, path + [True], out)
+    ratio = first / (first + second)
+    if (first_mine, second_mine) == (first, second) and abs(node["ratio"] - ratio) > 0.01:
+        out.append((path, ratio))
+    return first_mine + second_mine, first + second
+
+
+def rebalance(parent, panes, stacked):
+    """Give every subagent pane the same share of the stack.
+
+    Each pane opens by halving the one above it, so without this the first
+    pane keeps half the height and the last ones shrink to slivers. Acts only
+    when the stack holds a different number of panes than `stacked`, so a size
+    the user picks by hand sticks. Returns the number of panes in the stack.
+    """
+    layout = (api("layout.export", pane_id=parent) or {}).get("layout")
+    if not layout:
+        return stacked
+    out = []
+    count, _ = even_splits(layout["root"], set(panes), [], out)
+    if count != stacked:
+        for path, ratio in out:
+            api("layout.set_split_ratio", pane_id=parent, path=path, ratio=ratio)
+    return count
+
+
 def watch():
     event = json.loads(os.environ.get("HERDR_PLUGIN_EVENT_JSON") or "{}")
     data = event.get("data") or event
@@ -228,7 +275,7 @@ def watch():
     except OSError:
         return
 
-    known, sources, panes, quiet = None, [], [], 0
+    known, sources, panes, stacked, quiet = None, [], [], 0, 0
     # ponytail: polls once a second while the agent works, the agents offer no
     # common subagent-start event. Give each integration one if this costs too much.
     while True:
@@ -246,9 +293,12 @@ def watch():
                 continue
             sources.append(source)
             open_view(pane, panes, src, label)
+            stacked = -1
         known = set(found)
         for source in sources:
             source.poll()
+        if panes:
+            stacked = rebalance(pane, panes, stacked)
         # Background subagents keep running after the agent itself goes idle.
         busy = agent.get("agent_status") == "working" or any(not source.done for source in sources)
         quiet = 0 if busy else quiet + 1
@@ -297,6 +347,20 @@ def view():
 
 
 def test():
+    def leaf(pane):
+        return {"type": "pane", "pane_id": pane}
+
+    def split(first, second, ratio=0.5):
+        return {"type": "split", "direction": "down", "ratio": ratio, "first": first, "second": second}
+
+    # Three subagents opened one below the other, beside the agent.
+    root = split(leaf("agent"), split(leaf("a"), split(leaf("b"), leaf("c"))))
+    out = []
+    assert even_splits(root, {"a", "b", "c"}, [], out) == (3, 4)
+    assert out == [([True], 1 / 3)], out
+    out = []
+    assert even_splits(split(leaf("a"), leaf("b"), 0.3), {"a"}, [], out) == (1, 2) and not out
+
     events = []
     claude = [
         {"type": "user", "message": {"role": "user", "content": "find it"}},

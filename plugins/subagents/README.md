@@ -16,7 +16,7 @@ them. This plugin follows the record each agent keeps of its subagents instead.
 
 - When an agent starts working, a watcher polls its session once a second for new subagents.
 - Each new subagent gets a pane labelled with its name. The first opens beside the agent and
-  the rest stack below it. Focus stays where it was.
+  the rest stack below it, sharing the height evenly. Focus stays where it was.
 - The pane shows the task, one line per tool call, and what the subagent says.
 - The pane closes 20 seconds after the subagent finishes, or after 10 minutes without output.
 
