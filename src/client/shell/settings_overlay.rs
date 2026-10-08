@@ -165,6 +165,7 @@ pub(super) fn render_settings_overlay(
                 "choose color dots or distinct symbols for each state",
                 &["color dots  ● ● ● ○ ·", "distinct symbols  × ◐ ✓ ○ ·"],
                 settings.selected,
+                settings.applied,
                 palette,
                 &mut choice_hits,
             );
@@ -177,6 +178,7 @@ pub(super) fn render_settings_overlay(
                 "play sounds when agents change state in background",
                 &["on", "off"],
                 settings.selected,
+                settings.applied,
                 palette,
                 &mut choice_hits,
             );
@@ -189,6 +191,7 @@ pub(super) fn render_settings_overlay(
                 "choose where background popup notifications should appear",
                 &["off", "inside herdr", "via terminal", "via system"],
                 settings.selected,
+                settings.applied,
                 palette,
                 &mut choice_hits,
             );
@@ -262,6 +265,7 @@ fn render_choice_section(
     description: &str,
     choices: &[&str],
     selected: usize,
+    applied: usize,
     palette: &Palette,
     hits: &mut Vec<(Rect, usize)>,
 ) {
@@ -291,7 +295,14 @@ fn render_choice_section(
             break;
         }
         let rect = Rect::new(area.x, y, area.width, 1);
-        draw_choice(buffer, rect, choice, index == selected, false, palette);
+        draw_choice(
+            buffer,
+            rect,
+            choice,
+            index == selected,
+            index == applied,
+            palette,
+        );
         hits.push((rect, index));
     }
 }
