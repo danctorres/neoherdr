@@ -876,3 +876,39 @@ fn phone_width_menu_spans_the_screen_with_taller_rows_when_they_fit() {
         .iter()
         .all(|(rect, _)| rect.height == 1 && rect.width < 42));
 }
+
+#[test]
+fn short_phone_screen_pages_the_menu_in_one_column() {
+    let mut state = state_with_which_key(true);
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    press(&mut state, prefix_key());
+    let total = state.key_hint.as_ref().expect("hint").bindings.len();
+
+    let first = frame_text(&state.compose(44, 18).expect("first page"));
+    assert!(first.contains("+workspace") && first.contains("more (1/2)"));
+    assert!(!first.contains("detach"));
+    // Every row keeps its label: one column, full width.
+    assert!(state
+        .hits
+        .key_hint_rows
+        .iter()
+        .all(|(rect, _)| rect.width == 42));
+
+    let more = state
+        .hits
+        .key_hint_rows
+        .iter()
+        .find(|(_, index)| *index == total)
+        .expect("more row")
+        .0;
+    tap(&mut state, more);
+    assert_eq!(state.mode, ClientShellMode::Prefix);
+    let second = frame_text(&state.compose(44, 18).expect("second page"));
+    assert!(second.contains("detach") && second.contains("more (2/2)"));
+
+    // Rows on a later page still press their own key.
+    let new_tab = hint_row(&state, "n");
+    tap(&mut state, new_tab);
+    assert_eq!(state.mode, ClientShellMode::Terminal);
+}
