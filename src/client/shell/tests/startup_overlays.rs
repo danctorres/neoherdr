@@ -1314,3 +1314,40 @@ fn client_settings_preview_restore_and_endpoint_integrations_are_owned_by_overla
         })) if integration_messages == &["installed codex"]
     ));
 }
+
+#[test]
+fn settings_choice_sections_mark_the_applied_choice() {
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    state.open_settings_overlay();
+    // Tab to indicators, then sound: entering a section marks what is in effect.
+    state.handle_input_bytes(b"\t\t");
+    let Some(ClientShellOverlay::Settings(settings)) = state.overlay.as_mut() else {
+        panic!("settings overlay");
+    };
+    assert_eq!(settings.section, ClientSettingsSection::Sound);
+    assert_eq!(settings.applied, settings.selected);
+    // Moving the cursor alone must not move the mark.
+    let applied = settings.applied;
+    settings.selected = 1 - applied;
+
+    let frame = state.compose(100, 30).expect("settings frame");
+    let rows = frame
+        .cells
+        .chunks(frame.width as usize)
+        .map(|row| {
+            row.iter()
+                .map(|cell| cell.symbol.as_str())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>();
+    let marked = rows
+        .iter()
+        .filter(|row| row.contains(" ✓"))
+        .collect::<Vec<_>>();
+    assert_eq!(marked.len(), 1, "{rows:#?}");
+    let expected = ["on", "off"][applied];
+    assert!(marked[0].contains(&format!("{expected} ✓")), "{marked:?}");
+    assert!(!marked[0].contains('▸'), "{marked:?}");
+}
