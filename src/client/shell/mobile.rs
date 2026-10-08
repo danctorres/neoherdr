@@ -993,6 +993,12 @@ impl ClientShellState {
             && super::contains(self.hits.mobile_keys, point)
         {
             match self.mode {
+                // An open copy-mode search prompt keeps the keyboard, as it does for the prefix key.
+                ClientShellMode::Copy
+                    if self
+                        .copy_mode
+                        .as_ref()
+                        .is_some_and(|copy_mode| copy_mode.search_prompt.is_some()) => {}
                 ClientShellMode::Terminal | ClientShellMode::Copy => {
                     self.mode = ClientShellMode::Prefix;
                     self.maybe_show_prefix_key_hint();

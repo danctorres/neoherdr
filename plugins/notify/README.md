@@ -3,6 +3,8 @@
 Pushes a notification when an agent blocks or finishes, so a locked phone hears about it.
 
 Each time an agent's status becomes `blocked` or `done`, the plugin POSTs to a URL you choose.
+`done` means the agent finished somewhere you were not looking; an agent that finishes in the tab
+an attached client is showing goes straight to `idle` and sends nothing.
 The title is `<agent> <status>` and the body is the agent's working directory. That is the shape
 [ntfy](https://ntfy.sh) expects, and a self-hosted ntfy on your tailnet keeps it off third-party
 servers.
