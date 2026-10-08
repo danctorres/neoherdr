@@ -111,6 +111,9 @@ pub(super) struct ShellHitMap {
     pub(super) tab_scroll_left: Rect,
     pub(super) tab_scroll_right: Rect,
     pub(super) mobile_switch: Rect,
+    pub(super) mobile_keys: Rect,
+    /// Tappable which-key rows, each with its index into the hint bindings.
+    pub(super) key_hint_rows: Vec<(Rect, usize)>,
     pub(super) mobile_close: Rect,
     pub(super) mobile_targets: Vec<(Rect, ClientMobileTarget)>,
     pub(super) mobile_max_scroll: usize,

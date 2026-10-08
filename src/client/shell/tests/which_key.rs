@@ -732,3 +732,116 @@ fn losing_the_local_endpoint_closes_an_open_menu_and_its_hint() {
     assert_eq!(state.active_key_group, None);
     assert!(state.key_hint.is_none());
 }
+
+fn tap(state: &mut ClientShellState, rect: Rect) -> ClientShellInput {
+    state.handle_raw_events(vec![crate::raw_input::RawInputEvent::Mouse(
+        crossterm::event::MouseEvent {
+            kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+            column: rect.x,
+            row: rect.y,
+            modifiers: crossterm::event::KeyModifiers::empty(),
+        },
+    )])
+}
+
+fn hint_row(state: &ClientShellState, key: &str) -> Rect {
+    let hint = state.key_hint.as_ref().expect("which-key hint");
+    let index = hint
+        .bindings
+        .iter()
+        .position(|(label, _)| label == key)
+        .unwrap_or_else(|| panic!("no {key} row: {:?}", hint.bindings));
+    state
+        .hits
+        .key_hint_rows
+        .iter()
+        .find(|(_, row)| *row == index)
+        .unwrap_or_else(|| panic!("{key} row is not tappable"))
+        .0
+}
+
+#[test]
+fn mobile_keys_button_and_hint_rows_drive_the_keymap_by_touch() {
+    let mut state = state_with_which_key(true);
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    state.compose(44, 30).expect("mobile header");
+    let keys = state.hits.mobile_keys;
+    assert!(!keys.is_empty());
+
+    tap(&mut state, keys);
+    assert_eq!(state.mode, ClientShellMode::Prefix);
+    state.compose(44, 30).expect("prefix menu");
+    let pane_menu = hint_row(&state, "p");
+    tap(&mut state, pane_menu);
+    assert_eq!(state.active_key_group.as_deref(), Some("pane"));
+
+    // The button steps back like Esc: submenu, then top level, then out.
+    state.compose(44, 30).expect("pane menu");
+    tap(&mut state, keys);
+    assert_eq!(state.active_key_group, None);
+    assert_eq!(state.mode, ClientShellMode::Prefix);
+    state.compose(44, 30).expect("prefix menu again");
+    tap(&mut state, keys);
+    assert_eq!(state.mode, ClientShellMode::Terminal);
+    assert!(state.key_hint.is_none());
+}
+
+#[test]
+fn tapping_a_menu_member_runs_it_and_leaves_prefix_mode() {
+    let mut state = state_with_which_key(true);
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    press(&mut state, prefix_key());
+    press(&mut state, plain_key(crossterm::event::KeyCode::Char('s')));
+    state.compose(106, 30).expect("system menu");
+    let hint = state.key_hint.clone().expect("system menu hint");
+    let (label, _) = hint.bindings.first().expect("system menu member").clone();
+    let row = hint_row(&state, &label);
+    tap(&mut state, row);
+    assert_eq!(state.mode, ClientShellMode::Terminal);
+    assert!(state.key_hint.is_none());
+}
+
+#[test]
+fn mobile_keys_button_is_hidden_without_which_key() {
+    let mut state = state_with_which_key(false);
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    state.compose(44, 30).expect("mobile header");
+    assert!(state.hits.mobile_keys.is_empty());
+}
+
+/// A tap presses the row's key label, so every label naming one key must
+/// parse back to a key its menu resolves.
+#[test]
+fn single_key_hint_labels_resolve_to_their_binding() {
+    let keybinds = state_with_which_key(true).config.keybinds.keybinds.clone();
+    let single = |label: &str| !(label.contains("..") || label.len() > 1 && label.contains('/'));
+    let key = |label: &str| {
+        let (code, modifiers) = crate::config::parse_key_combo(label)
+            .unwrap_or_else(|| panic!("label {label} does not parse"));
+        crate::input::TerminalKey::new(code, modifiers)
+    };
+    for (label, description) in crate::input::prefix_menu_entries(&keybinds) {
+        if single(&label) {
+            assert!(
+                crate::input::resolve_prefix_binding(&keybinds, &key(&label)).is_some(),
+                "prefix {label} ({description})"
+            );
+        }
+    }
+    for group in &keybinds.groups {
+        for (label, description) in
+            crate::input::group_entries_where(&keybinds, &group.id, |_| true)
+        {
+            if single(&label) {
+                assert!(
+                    crate::input::resolve_group_key(&keybinds, &group.id, &key(&label)).is_some(),
+                    "{} {label} ({description})",
+                    group.id
+                );
+            }
+        }
+    }
+}

@@ -170,7 +170,7 @@ pub(crate) fn render_key_hint(
     buffer: &mut Buffer,
     hint: &KeyHintState,
     palette: &Palette,
-) -> Option<Rect> {
+) -> Option<(Rect, Vec<(Rect, usize)>)> {
     if !hint.visible || hint.bindings.is_empty() {
         return None;
     }
@@ -229,6 +229,7 @@ pub(crate) fn render_key_hint(
         .bg(palette.panel_bg)
         .add_modifier(Modifier::BOLD);
     let label_style = Style::default().fg(palette.text).bg(palette.panel_bg);
+    let mut row_hits = Vec::with_capacity(shown);
     for (position, (key, label)) in hint.bindings.iter().take(shown).enumerate() {
         let col = position / rows;
         let row = (position % rows) as u16;
@@ -244,12 +245,13 @@ pub(crate) fn render_key_hint(
         if cell_width == 0 {
             continue;
         }
+        row_hits.push((Rect::new(cell_x, row_y, cell_width, 1), position));
         put_text(buffer, cell_x, row_y, cell_width, key, key_style);
         let label_x = cell_x.saturating_add(key_width(col) + 2);
         let label_width = inner.right().saturating_sub(label_x);
         put_text(buffer, label_x, row_y, label_width, label, label_style);
     }
-    Some(rect)
+    Some((rect, row_hits))
 }
 
 pub(crate) fn render_context_menu(
