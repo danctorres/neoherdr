@@ -36,6 +36,7 @@ impl ClientShellState {
         self.overlay = Some(ClientShellOverlay::Settings(ClientSettingsOverlay {
             section: ClientSettingsSection::Theme,
             selected: theme_index(&self.config.theme_name),
+            applied: theme_index(&self.config.theme_name),
             original_theme_name: self.config.theme_name.clone(),
             original_palette: self.config.palette.clone(),
             integrations: Vec::new(),
@@ -73,6 +74,7 @@ impl ClientShellState {
         if let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() {
             settings.section = section;
             settings.selected = selected;
+            settings.applied = selected;
         }
         if request_integrations {
             self.queue_integration_list(outcome, true);
@@ -223,6 +225,11 @@ impl ClientShellState {
                 );
             }
             ClientSettingsSection::Integrations => self.install_recommended_integrations(outcome),
+        }
+        // A failed save reloads nothing, so the old choice stays marked.
+        let applied = self.selected_index_for_settings_section(section);
+        if let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() {
+            settings.applied = applied;
         }
     }
 

@@ -431,6 +431,9 @@ impl ClientSettingsSection {
 pub(super) struct ClientSettingsOverlay {
     pub(super) section: ClientSettingsSection,
     pub(super) selected: usize,
+    /// The choice currently in effect in this section, marked with a check
+    /// so applying one shows in the dialog.
+    pub(super) applied: usize,
     pub(super) original_theme_name: String,
     pub(super) original_palette: Palette,
     pub(super) integrations: Vec<crate::api::schema::IntegrationInfo>,
