@@ -180,14 +180,30 @@ pub(crate) fn render_key_hint(
     // `panel()` primitive. Single column when it fits, otherwise two columns
     // filled top to bottom, so entries listed together stay together.
     let max_rows = screen.height.saturating_sub(4).max(1) as usize;
-    let shown = hint.bindings.len().min(max_rows.saturating_mul(2).max(1));
-    let columns = if hint.bindings.len() > max_rows { 2 } else { 1 };
+    // Touch layout: the popup spans the screen in one column, since a second
+    // column has no room for labels at phone width. A menu taller than the
+    // screen is split into pages, turned by a last `more` row.
+    let paged = touch && hint.bindings.len() > max_rows && max_rows > 1;
+    let (bindings, first) = if paged {
+        let per_page = max_rows - 1;
+        let pages = hint.bindings.len().div_ceil(per_page);
+        let page = hint.page % pages;
+        let first = page * per_page;
+        let last = (first + per_page).min(hint.bindings.len());
+        let mut entries = hint.bindings[first..last].to_vec();
+        let more = format!("more ({}/{pages})", page + 1);
+        entries.push(("…".to_owned(), std::borrow::Cow::Owned(more)));
+        (std::borrow::Cow::Owned(entries), first)
+    } else {
+        (std::borrow::Cow::Borrowed(hint.bindings.as_slice()), 0)
+    };
+    let shown = bindings.len().min(max_rows.saturating_mul(2).max(1));
+    let columns = if bindings.len() > max_rows { 2 } else { 1 };
     let rows = shown.div_ceil(columns);
-    // Touch layout: the popup spans the screen and, when the menu is short
-    // enough, every entry gets a blank line so rows are easier to hit.
+    // Short touch menus give every entry a blank line so rows are easier to hit.
     let row_height = if touch && rows * 2 <= max_rows { 2 } else { 1 };
     // Keys are padded to the widest key of their column so labels line up.
-    let column = |col: usize| &hint.bindings[col * rows..((col + 1) * rows).min(shown)];
+    let column = |col: usize| &bindings[col * rows..((col + 1) * rows).min(shown)];
     let key_width = |col: usize| {
         column(col)
             .iter()
@@ -236,7 +252,7 @@ pub(crate) fn render_key_hint(
         .add_modifier(Modifier::BOLD);
     let label_style = Style::default().fg(palette.text).bg(palette.panel_bg);
     let mut row_hits = Vec::with_capacity(shown);
-    for (position, (key, label)) in hint.bindings.iter().take(shown).enumerate() {
+    for (position, (key, label)) in bindings.iter().take(shown).enumerate() {
         let col = position / rows;
         let row = ((position % rows) * row_height) as u16;
         let mut cell_x = inner.x;
@@ -253,13 +269,20 @@ pub(crate) fn render_key_hint(
         }
         // The whole slot is the target, not only the text: the last column
         // runs to the popup edge.
+        let to_edge = inner.right().saturating_sub(cell_x);
         let hit_width = if col + 1 == columns {
-            inner.right().saturating_sub(cell_x)
+            to_edge
         } else {
-            cell_width.saturating_add(2)
+            cell_width.saturating_add(2).min(to_edge)
         };
         let hit_height = (row_height as u16).min(inner.bottom().saturating_sub(row_y));
-        row_hits.push((Rect::new(cell_x, row_y, hit_width, hit_height), position));
+        // The `more` row sits one past the last binding.
+        let index = if paged && position + 1 == bindings.len() {
+            hint.bindings.len()
+        } else {
+            first + position
+        };
+        row_hits.push((Rect::new(cell_x, row_y, hit_width, hit_height), index));
         put_text(buffer, cell_x, row_y, cell_width, key, key_style);
         let label_x = cell_x.saturating_add(key_width(col) + 2);
         let label_width = inner.right().saturating_sub(label_x);

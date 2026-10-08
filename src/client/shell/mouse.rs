@@ -678,7 +678,7 @@ impl ClientShellState {
 
     /// A click on a which-key row presses that row's key, so mouse and touch
     /// reach every action the keymap does. Range rows such as `1..9` name no
-    /// single key and are swallowed.
+    /// single key and are swallowed. The `more` row turns the page instead.
     fn press_key_hint_row(&mut self, point: (u16, u16), outcome: &mut ClientShellInput) -> bool {
         if self.mode != ClientShellMode::Prefix {
             return false;
@@ -691,6 +691,15 @@ impl ClientShellState {
         else {
             return false;
         };
+        if let Some(hint) = self
+            .key_hint
+            .as_mut()
+            .filter(|hint| index == hint.bindings.len())
+        {
+            hint.page = hint.page.wrapping_add(1);
+            outcome.repaint = true;
+            return true;
+        }
         let combo = self
             .key_hint
             .as_ref()

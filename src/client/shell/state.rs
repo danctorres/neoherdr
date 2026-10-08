@@ -112,7 +112,8 @@ pub(super) struct ShellHitMap {
     pub(super) tab_scroll_right: Rect,
     pub(super) mobile_switch: Rect,
     pub(super) mobile_keys: Rect,
-    /// Tappable which-key rows, each with its index into the hint bindings.
+    /// Tappable which-key rows, each with its index into the hint bindings;
+    /// the `more` row uses the binding count.
     pub(super) key_hint_rows: Vec<(Rect, usize)>,
     pub(super) mobile_close: Rect,
     pub(super) mobile_targets: Vec<(Rect, ClientMobileTarget)>,
@@ -293,6 +294,8 @@ pub(super) struct KeyHintState {
     pub(super) title: String,
     pub(super) bindings: Vec<(String, Cow<'static, str>)>,
     pub(super) visible: bool,
+    /// Page shown at phone width when the menu is taller than the screen.
+    pub(super) page: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1275,6 +1278,7 @@ impl ClientShellState {
             title,
             bindings,
             visible: true,
+            page: 0,
         });
     }
 
