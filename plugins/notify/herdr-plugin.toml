@@ -1,0 +1,10 @@
+id = "notify"
+name = "Notify"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Push a notification when an agent blocks or finishes"
+platforms = ["linux", "macos"]
+
+[[events]]
+on = "pane.agent_status_changed"
+command = ["python3", "bin/notify"]
