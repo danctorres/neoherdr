@@ -67,11 +67,16 @@ def parse_message(rec, events):
     """
     msg = rec.get("message")
     if not isinstance(msg, dict):
-        return None
+        return True if rec.get("customType") == "session_exit" else None
     content = msg.get("content")
     if isinstance(content, str):
         content = [{"type": "text", "text": content}]
     role = msg.get("role")
+    if role == "toolResult" and msg.get("toolName") == "yield":
+        # An omp subagent ends by yielding its result, and its session may stay
+        # open for minutes after. A yield with a list of types is a partial one.
+        partial = isinstance((msg.get("details") or {}).get("type"), list)
+        return not (partial or msg.get("isError"))
     if role not in ("user", "assistant"):
         return False
     for item in content or []:
@@ -383,9 +388,14 @@ def test():
         {"type": "message", "message": {"role": "toolResult", "content": [{"type": "text", "text": "x"}]}},
         {"type": "message", "message": {"role": "assistant", "stopReason": "stop", "content": [
             {"type": "text", "text": "ok"}]}},
+        {"type": "message", "message": {"role": "developer", "content": [{"type": "text", "text": "end with a tool"}]}},
+        {"type": "message", "message": {"role": "toolResult", "toolName": "yield", "details": {"type": ["finding"]}}},
+        {"type": "message", "message": {"role": "toolResult", "toolName": "yield", "details": {"type": "result"}}},
+        {"type": "custom", "customType": "tool_execution_start"},
+        {"type": "custom", "customType": "session_exit"},
     ]
     done = [parse_message(rec, events) for rec in omp]
-    assert done == [None, False, False, True], done
+    assert done == [None, False, False, True, False, False, True, None, True], done
     assert events == [("tool", "read", "Reading diff"), ("text", "ok")], events
 
     with tempfile.TemporaryDirectory() as tmp:
