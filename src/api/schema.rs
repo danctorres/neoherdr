@@ -45,6 +45,7 @@ pub struct Request {
 operations::define_operations! {
     Ping(PingParams) => "ping", false, false;
     ServerStop(EmptyParams) => "server.stop", false, false;
+    ServerQuit(ServerQuitParams) => "server.quit", false, true;
     ServerLiveHandoff(ServerLiveHandoffParams) => "server.live_handoff", false, false;
     ServerReloadConfig(EmptyParams) => "server.reload_config", true, true;
     ServerSshAgentRegister(ServerSshAgentRegisterParams) => "server.ssh_agent.register", false, false;

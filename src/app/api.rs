@@ -1040,6 +1040,14 @@ impl App {
         };
 
         let response = match request.method {
+            Method::ServerQuit(params) => {
+                self.state.forget_agents_on_exit = params.forget_agents;
+                self.state.should_quit = true;
+                SuccessResponse {
+                    id: request.id,
+                    result: ResponseResult::Ok {},
+                }
+            }
             Method::ServerStop(_) => {
                 self.state.should_quit = true;
                 SuccessResponse {

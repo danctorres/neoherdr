@@ -265,3 +265,52 @@ fn agent_tab_failure_is_a_notice_that_keeps_the_picker_usable() {
         )]
     ));
 }
+
+fn open_system_menu(state: &mut ClientShellState) {
+    press(
+        state,
+        key(crossterm::event::KeyCode::Char('b'), KeyModifiers::CONTROL),
+    );
+    press_char(state, 's');
+}
+
+#[test]
+fn system_menu_quit_asks_before_stopping_the_server() {
+    for (ch, modifiers, forget_agents) in [
+        ('x', KeyModifiers::empty(), false),
+        ('X', KeyModifiers::SHIFT, true),
+    ] {
+        let mut state = agent_tab_state(Config::default(), Some(&["server.quit"]));
+        open_system_menu(&mut state);
+
+        let asked = press(
+            &mut state,
+            key(crossterm::event::KeyCode::Char(ch), modifiers),
+        );
+        assert!(asked.actions.is_empty());
+        assert!(matches!(
+            state.overlay,
+            Some(ClientShellOverlay::ConfirmClose(_))
+        ));
+
+        let quit = press(
+            &mut state,
+            key(crossterm::event::KeyCode::Enter, KeyModifiers::empty()),
+        );
+        assert!(matches!(
+            &single_request(&quit).method,
+            crate::api::schema::Method::ServerQuit(params) if params.forget_agents == forget_agents
+        ));
+    }
+}
+
+#[test]
+fn system_menu_hides_quit_on_runtimes_without_it() {
+    let mut state = agent_tab_state(Config::default(), Some(&["pane.focus"]));
+    open_system_menu(&mut state);
+
+    let pressed = press_char(&mut state, 'x');
+
+    assert!(pressed.actions.is_empty());
+    assert!(state.overlay.is_none());
+}

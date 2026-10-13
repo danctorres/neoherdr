@@ -259,6 +259,17 @@ fn first_pane_id_in_layout(layout: &LayoutSnapshot) -> Option<u32> {
     }
 }
 
+impl SessionSnapshot {
+    /// Drops what restore would use to resume or relaunch an agent.
+    pub fn forget_agents(&mut self) {
+        let tabs = self.workspaces.iter_mut().flat_map(|ws| &mut ws.tabs);
+        for pane in tabs.flat_map(|tab| tab.panes.values_mut()) {
+            pane.agent_session = None;
+            pane.agent_resume = None;
+        }
+    }
+}
+
 /// Capture the current app state into a serializable snapshot.
 pub fn capture(
     workspaces: &[Workspace],
@@ -1388,6 +1399,32 @@ mod tests {
         assert_eq!(launched_with(&["sh", "-c", "tmux attach"]), None);
         // An agent tab launches the agent itself through the user's shell.
         assert!(launched_with(&["zsh", "-lic", "exec opencode"]).is_some());
+    }
+
+    #[test]
+    fn forget_agents_drops_what_restore_would_reopen() {
+        let mut state = state_with_workspaces(&["one"]);
+        let root = state.workspaces[0].tabs[0].root_pane;
+        state.ensure_test_terminals();
+        let terminal_id = state.workspaces[0].tabs[0].panes[&root]
+            .attached_terminal_id
+            .clone();
+        let terminal = state.terminals.get_mut(&terminal_id).unwrap();
+        terminal.set_persisted_agent_session(crate::agent_resume::PersistedAgentSession {
+            source: "herdr:claude".into(),
+            agent: "claude".into(),
+            session_ref: crate::agent_resume::AgentSessionRef::id("a").unwrap(),
+        });
+
+        let mut snapshot = capture_from_state(&state);
+        assert!(snapshot.workspaces[0].tabs[0].panes[&root.raw()]
+            .agent_session
+            .is_some());
+        snapshot.forget_agents();
+
+        let pane = &snapshot.workspaces[0].tabs[0].panes[&root.raw()];
+        assert!(pane.agent_session.is_none());
+        assert!(pane.agent_resume.is_none());
     }
 
     #[test]

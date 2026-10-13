@@ -43,6 +43,8 @@ group system "system" opener=["prefix+s"] user=false
   b ["b"] Builtin(ToggleSidebar) "toggle sidebar"
   ? ["?"] Builtin(Help) "keybinds"
   q ["q"] Builtin(Detach) "detach"
+  x ["x"] Builtin(Quit) "quit: stop server and agents"
+  shift+x ["shift+x"] Builtin(QuitForgetAgents) "quit and forget agents"
 group open "open TUI" opener=["prefix+o"] user=false
   f ["f"] Command(3) "yazi"
 group scripts "scripts" opener=["prefix+m"] user=true
@@ -155,6 +157,8 @@ help system menu (prefix+s)
   b toggle sidebar
   ? keybinds
   q detach
+  x quit: stop server and agents
+  shift+x quit and forget agents
 help open TUI menu (prefix+o)
   f yazi
 help scripts menu (prefix+m)
