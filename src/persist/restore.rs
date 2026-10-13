@@ -539,10 +539,15 @@ fn restore_tab(
             .and_then(crate::detect::parse_canonical_agent_label);
         let saved_launch_argv = saved_pane.and_then(|p| p.launch_argv.clone());
         let saved_agent_session = saved_pane.and_then(|p| p.agent_session.as_ref());
-        let saved_agent_resume = saved_pane.and_then(saved_reported_resume);
+        let saved_resume = saved_pane.and_then(saved_reported_resume);
+        let is_relaunch = |resume: &&PaneAgentResumeSnapshot| {
+            resume.source == crate::agent_resume::RELAUNCH_SOURCE
+        };
+        let saved_relaunch = saved_resume.filter(is_relaunch);
+        let saved_agent_resume = saved_resume.filter(|resume| !is_relaunch(resume));
         let saved_history =
             old_id.and_then(|old_id| history.and_then(|history| history.panes.get(old_id)));
-        let startup = {
+        let mut startup = {
             let mut agent_restore = AgentRestoreState {
                 enabled: runtime_context.resume_agents_on_restore,
                 resumed_sessions: resumed_agent_sessions,
@@ -555,6 +560,14 @@ fn restore_tab(
                 &mut agent_restore,
             )
         };
+        // Nothing to resume: start the agent that was running afresh.
+        if runtime_context.resume_agents_on_restore
+            && startup.restore_plan.is_none()
+            && !startup.duplicate_agent_session
+        {
+            startup.restore_plan =
+                saved_relaunch.map(|resume| reported_resume_from_snapshot(resume).plan(&cwd));
+        }
         let restored_agent_resume = saved_agent_resume
             .filter(|_| !startup.duplicate_agent_session)
             .map(reported_resume_from_snapshot);

@@ -238,7 +238,7 @@ impl App {
             return false;
         }
 
-        let Some(resume_command) = shell_command_from_argv(&plan.argv) else {
+        let Some(resume_command) = resume_shell_command(&plan) else {
             tracing::warn!(
                 pane = pane_id.raw(),
                 terminal = %terminal_id,
@@ -351,6 +351,20 @@ fn stable_terminal_inner_rect(pane_inner: Rect) -> Rect {
         pane_inner.width.saturating_sub(1),
         pane_inner.height,
     )
+}
+
+fn resume_shell_command(plan: &crate::agent_resume::AgentResumePlan) -> Option<String> {
+    let mut command = shell_command_from_argv(&plan.argv)?;
+    // A resume fails when the agent never stored the conversation. Start the
+    // agent afresh instead of leaving a bare shell.
+    // ponytail: `||` is not Windows PowerShell 5 syntax, so unix shells only;
+    // type the fallback from the server once it can see the resume fail.
+    let agent = crate::detect::parse_agent_label(&plan.agent);
+    if let Some(agent) = agent.filter(|_| cfg!(unix) && plan.argv.len() > 1) {
+        command.push_str(" || ");
+        command.push_str(crate::detect::interactive_agent_executable(agent));
+    }
+    Some(command)
 }
 
 fn shell_command_from_argv(argv: &[String]) -> Option<String> {
@@ -966,5 +980,30 @@ mod tests {
             Some("claude --resume 'session with '\\'' quote'")
         );
         assert_eq!(shell_command_from_argv(&[]), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resume_shell_command_starts_the_agent_afresh_when_resume_fails() {
+        let plan = |agent: &str, argv: &[&str]| crate::agent_resume::AgentResumePlan {
+            agent: agent.into(),
+            argv: argv.iter().map(|arg| arg.to_string()).collect(),
+            dedupe_key: String::new(),
+        };
+
+        assert_eq!(
+            resume_shell_command(&plan("claude", &["claude", "--resume", "a"])).as_deref(),
+            Some("claude --resume a || claude")
+        );
+        // A relaunch is already the fresh start, and an unknown agent has none.
+        assert_eq!(
+            resume_shell_command(&plan("claude", &["claude"])).as_deref(),
+            Some("claude")
+        );
+        assert_eq!(
+            resume_shell_command(&plan("prime-agent", &["prime-agent", "--resume", "a"]))
+                .as_deref(),
+            Some("prime-agent --resume a")
+        );
     }
 }
