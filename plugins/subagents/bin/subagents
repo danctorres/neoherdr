@@ -7,6 +7,7 @@ test   self-check of the transcript readers
 """
 import fcntl
 import glob
+import itertools
 import json
 import os
 import re
@@ -177,6 +178,22 @@ def source_for(src):
     return OpencodeSource(src[len("opencode:"):]) if src.startswith("opencode:") else JsonlSource(src)
 
 
+def pi_label(path):
+    """Agent name of a pi-subagents child, from its session_info record."""
+    try:
+        with open(path) as f:
+            for line in itertools.islice(f, 20):  # the record sits near the top
+                if '"session_info"' not in line:
+                    continue
+                m = re.fullmatch(r"subagent-(.+)-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}-\d+",
+                                 json.loads(line).get("name") or "")
+                if m:
+                    return m.group(1)
+    except (OSError, ValueError, AttributeError):
+        pass
+    return os.path.basename(os.path.dirname(os.path.dirname(path)))  # the <id> directory
+
+
 def discover(kind, session):
     """Map each subagent of an agent session to its label, keyed by transcript source."""
     value = session.get("value") or ""
@@ -206,10 +223,14 @@ def discover(kind, session):
         except sqlite3.Error:
             pass
     elif session.get("kind") == "path":
-        # omp, and pi with a subagent extension that saves sessions the same way:
-        # subagents live in a directory named after the parent session file.
-        for path in glob.glob(os.path.join(glob.escape(value.removesuffix(".jsonl")), "*.jsonl")):
+        # omp (and pi extensions saving the same way): subagents live in a
+        # directory named after the parent session file.
+        stem = glob.escape(value.removesuffix(".jsonl"))
+        for path in glob.glob(os.path.join(stem, "*.jsonl")):
             found[path] = os.path.basename(path)[: -len(".jsonl")]
+        # pi-subagents: one level per child and per run below that directory.
+        for path in glob.glob(os.path.join(stem, "*", "run-*", "session.jsonl")):
+            found[path] = pi_label(path)
     return found
 
 
@@ -407,6 +428,19 @@ def test():
         with open(path, "a") as f:
             f.write(json.dumps(claude[1])[20:] + "\n" + json.dumps(claude[3]) + "\n")
         assert source.poll() == [("tool", "Read", "a.rs"), ("text", "found")] and source.done
+
+        uuid = "bbfcc9cf-8a31-4bc1-8698-5118f7e5a58a"
+        want = {}
+        for child, name, label in (("c1", "scout", "scout"), ("c2", "build-hard", "build-hard"), ("c3", None, "c3")):
+            run = os.path.join(tmp, "parent", child, "run-0")
+            os.makedirs(run)
+            want[os.path.join(run, "session.jsonl")] = label
+            with open(os.path.join(run, "session.jsonl"), "w") as f:
+                f.write(json.dumps({"type": "session", "id": "x"}) + "\n")
+                if name:
+                    f.write(json.dumps({"type": "session_info", "name": f"subagent-{name}-{uuid}-1"}) + "\n")
+        found = discover("pi", {"kind": "path", "value": os.path.join(tmp, "parent.jsonl")})
+        assert found == want, found
 
         os.makedirs(os.path.join(tmp, "opencode"))
         db = sqlite3.connect(os.path.join(tmp, "opencode", "opencode.db"))
