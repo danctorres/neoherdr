@@ -457,6 +457,14 @@ pane_history = false
 # command = ["lazygit"]
 # width = "95%"
 # height = "95%"
+#
+# [[custom]]
+# id = "nvim"
+# key = "n"
+# title = "nvim"
+# description = "editor in a new tab"
+# command = ["nvim"]
+# type = "tab"
 "##;
 
 // Bundled at build time so the printed skill always matches this binary's release.
