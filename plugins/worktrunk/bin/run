@@ -39,12 +39,23 @@ if ! command -v wt >/dev/null 2>&1; then
   printf '\n'
 fi
 
-case "$sub" in
-  # wt fills in the braces; the fork's binary opens the chosen worktree.
-  switch) wt switch -x "${HERDR_BIN_PATH:-herdr}" -- worktree open --cwd '{{ repo_path }}' --path '{{ worktree_path }}' --focus ;;
-  *) wt "$sub" ;;
-esac
-code=$?
+while :; do
+  case "$sub" in
+    # wt fills in the braces; the fork's binary opens the chosen worktree.
+    switch) wt switch -x "${HERDR_BIN_PATH:-herdr}" -- worktree open --cwd '{{ repo_path }}' --path '{{ worktree_path }}' --focus ;;
+    *) wt "$sub" ;;
+  esac
+  code=$?
+  # A failed switch or create goes back to the picker instead of only closing.
+  if [ "$sub" != switch ] || [ "$code" -eq 0 ]; then
+    break
+  fi
+  printf '\n[worktrunk] wt switch failed with exit code %s. Press Enter to go back to the picker, or q then Enter to close.\n' "$code"
+  IFS= read -r answer || exit "$code"
+  case "$answer" in
+    q | Q) exit "$code" ;;
+  esac
+done
 if [ "$code" -ne 0 ]; then
   hold "[worktrunk] wt $sub failed with exit code $code. "
 elif [ "$sub" = list ]; then

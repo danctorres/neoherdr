@@ -59,6 +59,9 @@ To create a worktree from the switch picker, type the new branch name
 first and then press `alt+c` — pressing `alt+c` with an empty picker makes
 `wt` exit with "no branch name entered".
 
+When a switch or create fails, the popup keeps wt's error on screen: press
+Enter to go back to the picker, or `q` then Enter to close.
+
 ## New worktrees appear automatically
 
 `wt`'s `post-start` hook runs once per created worktree (unlike
