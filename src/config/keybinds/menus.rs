@@ -89,6 +89,9 @@ pub(super) struct MenuEntry {
 ///   bar, `j`/`k` for the vertical workspace and agent lists
 /// - shift turns "go to" into "move": `H`/`L` move a tab, `J`/`K` move a
 ///   workspace, `:` (shifted `;`) swaps with the last pane
+/// - a menu's direction keys repeat: after one, the menu stays open with only
+///   those keys live, and any other key ends the walk
+///   ([`crate::input::KeybindAction::repeats_in_menu`])
 /// - shift undoes the lowercase verb where there is no motion: `R` removes
 ///   a name that `r` set
 /// - the rest follow common convention: `c` clear, `e` editor, `,`

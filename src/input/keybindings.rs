@@ -304,6 +304,25 @@ impl KeybindAction {
             .collect()
     }
 
+    /// Whether the action walks or moves along a list. Such an entry keeps
+    /// its which-key menu open, so the key can be pressed again without the
+    /// prefix.
+    pub(crate) fn repeats_in_menu(self) -> bool {
+        matches!(
+            self,
+            Self::PreviousWorkspace
+                | Self::NextWorkspace
+                | Self::MoveWorkspacePrevious
+                | Self::MoveWorkspaceNext
+                | Self::PreviousTab
+                | Self::NextTab
+                | Self::MoveTabPrevious
+                | Self::MoveTabNext
+                | Self::PreviousAgent
+                | Self::NextAgent
+        )
+    }
+
     pub(crate) fn description(self) -> &'static str {
         match self {
             Self::NewWorkspace => "new workspace",

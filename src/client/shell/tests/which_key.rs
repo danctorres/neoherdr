@@ -912,3 +912,52 @@ fn short_phone_screen_pages_the_menu_in_one_column() {
     tap(&mut state, new_tab);
     assert_eq!(state.mode, ClientShellMode::Terminal);
 }
+
+#[test]
+fn walk_keys_keep_their_menu_open_until_another_key() {
+    let mut state = state_with_which_key(true);
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    let key = |ch| plain_key(crossterm::event::KeyCode::Char(ch));
+
+    press(&mut state, prefix_key());
+    press(&mut state, key('t'));
+    for _ in 0..3 {
+        press(&mut state, key('l'));
+        assert_eq!(state.mode, ClientShellMode::Prefix);
+        assert_eq!(state.active_key_group.as_deref(), Some("tab"));
+    }
+    // While walking, only the walk and move keys are listed and live.
+    let hint = state.key_hint.clone().expect("walk hint");
+    assert!(hint.title.ends_with("esc done"), "{}", hint.title);
+    let keys: Vec<_> = hint.bindings.iter().map(|(key, _)| key.as_str()).collect();
+    assert_eq!(keys, ["h", "l", "shift+h", "shift+l"]);
+
+    // `r` renames a tab from the open menu, but after a walk it only ends
+    // the walk and is handled as an ordinary key.
+    let typed = press(&mut state, key('r'));
+    assert_eq!(state.mode, ClientShellMode::Terminal);
+    assert_eq!(state.active_key_group, None);
+    assert!(state.key_hint.is_none());
+    assert!(state.overlay.is_none());
+    assert!(
+        matches!(
+            typed.requests.as_slice(),
+            [ClientMessage::ClientShellPaneInput { .. }]
+        ),
+        "{:?}",
+        typed.requests
+    );
+
+    // Esc ends a walk without stepping back to the top-level menu, and a
+    // reopened menu is whole again.
+    press(&mut state, prefix_key());
+    press(&mut state, key('t'));
+    press(&mut state, key('h'));
+    press(&mut state, plain_key(crossterm::event::KeyCode::Esc));
+    assert_eq!(state.mode, ClientShellMode::Terminal);
+    press(&mut state, prefix_key());
+    press(&mut state, key('t'));
+    press(&mut state, key('r'));
+    assert!(matches!(state.overlay, Some(ClientShellOverlay::Rename(_))));
+}
