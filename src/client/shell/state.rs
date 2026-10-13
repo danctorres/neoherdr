@@ -39,7 +39,7 @@ pub(crate) struct ClientShellConfig {
     pub(super) palette: Palette,
     pub(super) keybinds: LiveKeybindConfig,
     pub(super) local_keys: crate::config::KeysConfig,
-    pub(super) tuis: Vec<crate::config::TuiConfig>,
+    pub(super) custom: Vec<crate::config::CustomEntry>,
     pub(super) keybinding_source: ClientShellKeybindingSource,
     pub(super) prompt_new_tab_name: bool,
     pub(super) prompt_new_workspace_name: bool,

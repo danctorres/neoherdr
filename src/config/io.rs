@@ -14,7 +14,7 @@ const KNOWN_TOP_LEVEL_CONFIG_KEYS: &[&str] = &[
     "session",
     "terminal",
     "theme",
-    "tui",
+    "custom",
     "ui",
     "update",
     "worktrees",
@@ -165,18 +165,18 @@ impl Config {
                     ignored_keys
                         .into_iter()
                         .filter(|path| match path.as_slice() {
-                            // `[[tui]]` is validated per entry below, not by serde.
-                            [ConfigKeyPathSegment::Key(key), ..] if key == "tui" => false,
+                            // `[[custom]]` is validated per entry below, not by serde.
+                            [ConfigKeyPathSegment::Key(key), ..] if key == "custom" => false,
                             [ConfigKeyPathSegment::Key(key)] => !unknown_sections.contains(key),
                             _ => true,
                         })
                         .collect(),
                     None,
                 ));
-                // TUIs join the keymap, so attach them before validating it.
-                apply_tuis(
+                // `[[custom]]` entries join the keymap, so attach them before validating it.
+                apply_custom(
                     &mut config,
-                    table.as_ref().and_then(|table| table.get("tui")),
+                    table.as_ref().and_then(|table| table.get("custom")),
                     &mut diagnostics,
                 );
                 diagnostics.extend(config.collect_diagnostics());
@@ -394,7 +394,7 @@ fn load_live_config_from_str(content: &str) -> Result<LoadedConfig, Vec<String>>
     );
 
     diagnostics.extend(config.theme.diagnostics());
-    apply_tuis(&mut config, table.get("tui"), &mut diagnostics);
+    apply_custom(&mut config, table.get("custom"), &mut diagnostics);
 
     Ok(LoadedConfig {
         config,
@@ -403,12 +403,12 @@ fn load_live_config_from_str(content: &str) -> Result<LoadedConfig, Vec<String>>
     })
 }
 
-/// Attaches the validated `[[tui]]` entries of `config.toml` to a config.
+/// Attaches the validated `[[custom]]` entries of `config.toml` to a config.
 /// Invalid entries are skipped individually and reported in `diagnostics`.
-fn apply_tuis(config: &mut Config, value: Option<&toml::Value>, diagnostics: &mut Vec<String>) {
-    let (tuis, tui_diagnostics) = super::tuis::parse_tuis(value);
-    config.tuis = tuis;
-    diagnostics.extend(tui_diagnostics);
+fn apply_custom(config: &mut Config, value: Option<&toml::Value>, diagnostics: &mut Vec<String>) {
+    let (custom, custom_diagnostics) = super::custom::parse_custom(value);
+    config.custom = custom;
+    diagnostics.extend(custom_diagnostics);
 }
 
 fn unknown_top_level_sections_from_value(
@@ -910,17 +910,17 @@ mod tests {
         let _ = std::fs::remove_dir_all(path);
     }
 
-    const TUI_CONFIG: &str = r#"
+    const CUSTOM_CONFIG: &str = r#"
 [ui]
 confirm_close = false
 
-[[tui]]
+[[custom]]
 id = "lazygit"
 key = "g"
 title = "lazygit"
 command = ["lazygit"]
 
-[[tui]]
+[[custom]]
 id = "bad"
 key = "prefix+b"
 title = "Bad"
@@ -929,39 +929,39 @@ command = ["bad"]
 
     #[test]
     fn startup_config_reads_tui_entries_from_config_toml() {
-        let loaded = Config::load_from_str(TUI_CONFIG);
+        let loaded = Config::load_from_str(CUSTOM_CONFIG);
 
-        assert_eq!(loaded.config.tuis.len(), 1);
-        assert_eq!(loaded.config.tuis[0].id, "lazygit");
+        assert_eq!(loaded.config.custom.len(), 1);
+        assert_eq!(loaded.config.custom[0].id, "lazygit");
         assert!(!loaded.config.ui.confirm_close);
         assert_eq!(
             loaded.diagnostics,
-            vec!["tui[1].key must be one submenu-local key"]
+            vec!["custom[1].key must be one submenu-local key"]
         );
     }
 
     #[test]
     fn live_config_reads_tui_entries_from_config_toml() {
-        let loaded = load_live_config_from_str(TUI_CONFIG).unwrap();
+        let loaded = load_live_config_from_str(CUSTOM_CONFIG).unwrap();
 
-        assert_eq!(loaded.config.tuis.len(), 1);
-        assert_eq!(loaded.config.tuis[0].id, "lazygit");
+        assert_eq!(loaded.config.custom.len(), 1);
+        assert_eq!(loaded.config.custom[0].id, "lazygit");
         assert_eq!(
             loaded.diagnostics,
-            vec!["tui[1].key must be one submenu-local key"]
+            vec!["custom[1].key must be one submenu-local key"]
         );
         assert!(loaded.invalid_sections.is_empty());
     }
 
     #[test]
     fn non_array_tui_key_is_reported_without_rejecting_config() {
-        let content = "tui = \"lazygit\"\n\n[ui]\nconfirm_close = false\n";
+        let content = "custom = \"lazygit\"\n\n[ui]\nconfirm_close = false\n";
 
         let startup = Config::load_from_str(content);
         assert!(!startup.config.ui.confirm_close);
-        assert!(startup.config.tuis.is_empty());
+        assert!(startup.config.custom.is_empty());
         assert_eq!(startup.diagnostics.len(), 1, "{:?}", startup.diagnostics);
-        assert!(startup.diagnostics[0].starts_with("invalid tui config"));
+        assert!(startup.diagnostics[0].starts_with("invalid custom config"));
 
         let live = load_live_config_from_str(content).unwrap();
         assert!(!live.config.ui.confirm_close);
@@ -971,13 +971,13 @@ command = ["bad"]
     #[test]
     fn startup_config_reports_tui_keybinding_conflicts() {
         let loaded = Config::load_from_str(
-            r#"[[tui]]
+            r#"[[custom]]
 id = "lazygit"
 key = "g"
 title = "lazygit"
 command = ["lazygit"]
 
-[[tui]]
+[[custom]]
 id = "gitui"
 key = "g"
 title = "gitui"
@@ -987,7 +987,7 @@ command = ["gitui"]
 
         assert!(
             loaded.diagnostics.iter().any(|diagnostic| diagnostic
-                .starts_with("duplicate group member key: tui[1].key in group")),
+                .starts_with("duplicate group member key: custom[1].key in group")),
             "{:?}",
             loaded.diagnostics
         );
@@ -995,21 +995,21 @@ command = ["gitui"]
 
     #[test]
     fn unknown_keys_inside_tui_entries_are_reported_on_startup_and_reload() {
-        let content = r#"[[tui]]
+        let content = r#"[[custom]]
 id = "lazygit"
 key = "g"
 title = "lazygit"
 command = ["lazygit"]
 widht = "80%"
 "#;
-        let expected = vec!["unknown config key tui[0].widht; ignoring key".to_string()];
+        let expected = vec!["unknown config key custom[0].widht; ignoring key".to_string()];
 
         let startup = Config::load_from_str(content);
-        assert_eq!(startup.config.tuis.len(), 1);
+        assert_eq!(startup.config.custom.len(), 1);
         assert_eq!(startup.diagnostics, expected);
 
         let live = load_live_config_from_str(content).unwrap();
-        assert_eq!(live.config.tuis.len(), 1);
+        assert_eq!(live.config.custom.len(), 1);
         assert_eq!(live.diagnostics, expected);
     }
 
@@ -1017,22 +1017,22 @@ widht = "80%"
     fn config_reload_picks_up_tui_changes() {
         let _guard = crate::config::test_config_env_lock().lock().unwrap();
         let path = std::env::temp_dir().join(format!(
-            "herdr-config-tui-reload-{}.toml",
+            "herdr-config-custom-reload-{}.toml",
             std::process::id()
         ));
         std::env::set_var(CONFIG_PATH_ENV_VAR, &path);
 
         std::fs::write(
             &path,
-            "[[tui]]\nid = \"btop\"\nkey = \"b\"\ntitle = \"btop\"\ncommand = [\"btop\"]\n",
+            "[[custom]]\nid = \"btop\"\nkey = \"b\"\ntitle = \"btop\"\ncommand = [\"btop\"]\n",
         )
         .unwrap();
         let first = load_live_config().unwrap();
 
         std::fs::write(
             &path,
-            "[[tui]]\nid = \"yazi\"\nkey = \"f\"\ntitle = \"yazi\"\ncommand = [\"yazi\"]\n\n\
-             [[tui]]\nid = \"btop\"\nkey = \"b\"\ntitle = \"btop\"\ncommand = [\"btop\"]\n",
+            "[[custom]]\nid = \"yazi\"\nkey = \"f\"\ntitle = \"yazi\"\ncommand = [\"yazi\"]\n\n\
+             [[custom]]\nid = \"btop\"\nkey = \"b\"\ntitle = \"btop\"\ncommand = [\"btop\"]\n",
         )
         .unwrap();
         let second = load_live_config().unwrap();
@@ -1043,9 +1043,9 @@ widht = "80%"
         let ids = |loaded: &LoadedConfig| {
             loaded
                 .config
-                .tuis
+                .custom
                 .iter()
-                .map(|tui| tui.id.clone())
+                .map(|custom| custom.id.clone())
                 .collect::<Vec<_>>()
         };
         assert_eq!(ids(&first), vec!["btop"]);

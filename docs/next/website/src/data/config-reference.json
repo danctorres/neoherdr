@@ -536,10 +536,10 @@
           "description": "Open the system menu (settings, reload config, sidebar, help, detach)."
         },
         {
-          "key": "keys.tui_menu",
+          "key": "keys.custom_menu",
           "type": "keybinding",
-          "default": "\"prefix+o\"",
-          "description": "Open the menu of TUIs configured as `[[tui]]` entries. Only shown when at least one TUI is configured."
+          "default": "\"prefix+c\"",
+          "description": "Open the menu of programs configured as `[[custom]]` entries. Only shown when at least one entry is configured."
         },
         {
           "key": "keys.settings",

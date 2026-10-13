@@ -29,15 +29,15 @@ pub(crate) const PANE_GROUP: &str = "pane";
 pub(crate) const AGENT_GROUP: &str = "agent";
 pub(crate) const GIT_GROUP: &str = "git";
 pub(crate) const SYSTEM_GROUP: &str = "system";
-/// Menu holding the TUIs configured as `[[tui]]` entries in config.toml.
-pub(crate) const TUI_GROUP: &str = "open";
+/// Menu holding the programs configured as `[[custom]]` entries in config.toml.
+pub(crate) const CUSTOM_GROUP: &str = "custom";
 
 /// What a which-key menu entry runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum KeyGroupAction {
     Builtin(crate::input::KeybindAction),
     PluginAction(&'static str),
-    /// A user `[[keys.command]]` or configured TUI entry, by index into
+    /// A user `[[keys.command]]` or `[[custom]]` entry, by index into
     /// [`Keybinds::custom_commands`].
     Command(usize),
 }
@@ -155,7 +155,7 @@ command = [
   { group = "system", key = "x", action = "quit" },
   { group = "system", key = "shift+x", action = "quit_forget_agents" },
 
-  { type = "group", group = "open", description = "open TUI" },
+  { type = "group", group = "custom", description = "custom" },
 ]
 "#;
 
@@ -195,7 +195,7 @@ pub(super) fn builtin_group_opener<'a>(
         AGENT_GROUP => Some(&keybinds.agent_menu),
         GIT_GROUP => Some(&keybinds.git_menu),
         SYSTEM_GROUP => Some(&keybinds.system_menu),
-        TUI_GROUP => Some(&keybinds.tui_menu),
+        CUSTOM_GROUP => Some(&keybinds.custom_menu),
         _ => None,
     }
 }
@@ -469,16 +469,16 @@ pub(super) fn report_shadowed_menu_openers(
             &keybinds.system_menu,
         ),
         (
-            "tui_menu",
-            TUI_GROUP,
-            &config.keys.tui_menu,
-            &keybinds.tui_menu,
+            "custom_menu",
+            CUSTOM_GROUP,
+            &config.keys.custom_menu,
+            &keybinds.custom_menu,
         ),
     ] {
         if config.keys.key_field_is_user_configured(field) || !effective.bindings.is_empty() {
             continue;
         }
-        // A menu without entries, such as the TUI menu with no `[[tui]]`
+        // A menu without entries, such as the custom menu with no `[[custom]]`
         // configured, is not shown, so there is nothing to reach.
         if !keybinds.groups.iter().any(|group| group.id == id) {
             continue;
@@ -581,7 +581,7 @@ mod tests {
         let mut config: Config = toml::from_str(
             r#"
 [keys]
-new_tab = "prefix+c"
+new_tab = "prefix+v"
 
 [[keys.command]]
 key = "prefix+m"
@@ -618,14 +618,14 @@ command = "lazygit"
 "#,
         )
         .unwrap();
-        config.tuis = vec![crate::config::TuiConfig {
+        config.custom = vec![crate::config::CustomEntry {
             id: "yazi".into(),
             key: "f".into(),
             title: "yazi".into(),
             description: None,
             command: vec!["yazi".into()],
             platforms: None,
-            kind: crate::config::TuiKind::Popup,
+            kind: crate::config::CustomKind::Popup,
             width: None,
             height: None,
         }];
@@ -682,10 +682,10 @@ command = "lazygit"
     }
 
     #[test]
-    fn empty_tui_menu_is_hidden_until_a_tui_is_configured() {
+    fn empty_custom_menu_is_hidden_until_an_entry_is_configured() {
         let keybinds = Config::default().keybinds();
-        assert!(!keybinds.groups.iter().any(|group| group.id == TUI_GROUP));
-        assert!(!keybinds.tui_menu.bindings.is_empty());
+        assert!(!keybinds.groups.iter().any(|group| group.id == CUSTOM_GROUP));
+        assert!(!keybinds.custom_menu.bindings.is_empty());
     }
 
     #[test]
@@ -704,28 +704,28 @@ command = "lazygit"
     }
 
     #[test]
-    fn configured_tuis_project_popup_and_tab_actions_under_one_group() {
+    fn custom_entries_project_popup_and_tab_actions_under_one_group() {
         let mut config = Config::default();
-        config.tuis = vec![
-            crate::config::TuiConfig {
+        config.custom = vec![
+            crate::config::CustomEntry {
                 id: "git".into(),
                 key: "g".into(),
                 title: "Git".into(),
                 description: None,
                 command: vec!["lazygit".into()],
                 platforms: None,
-                kind: crate::config::TuiKind::Popup,
+                kind: crate::config::CustomKind::Popup,
                 width: Some(crate::popup_size::PopupSize::Cells(90)),
                 height: None,
             },
-            crate::config::TuiConfig {
+            crate::config::CustomEntry {
                 id: "nvim".into(),
                 key: "n".into(),
                 title: "Nvim".into(),
                 description: None,
                 command: vec!["nvim".into()],
                 platforms: None,
-                kind: crate::config::TuiKind::Tab,
+                kind: crate::config::CustomKind::Tab,
                 width: Some(crate::popup_size::PopupSize::Cells(40)),
                 height: Some(crate::popup_size::PopupSize::Cells(20)),
             },
@@ -735,7 +735,7 @@ command = "lazygit"
         assert_eq!(members.len(), 2);
         let popup = members
             .iter()
-            .find(|binding| binding.command == "tui:git")
+            .find(|binding| binding.command == "custom:git")
             .unwrap();
         assert_eq!(popup.argv.as_deref(), Some(&["lazygit".to_owned()][..]));
         assert_eq!(popup.action, CustomCommandAction::Popup);
@@ -748,7 +748,7 @@ command = "lazygit"
             )));
         let tab = members
             .iter()
-            .find(|binding| binding.command == "tui:nvim")
+            .find(|binding| binding.command == "custom:nvim")
             .unwrap();
         assert_eq!(tab.action, CustomCommandAction::Tab);
         assert_eq!(tab.width, None);
@@ -761,8 +761,11 @@ command = "lazygit"
             crate::input::KeybindDispatch::Prefix
         )
         .is_none());
-        assert_eq!(crate::input::group_entries(&keybinds, TUI_GROUP).len(), 2);
-        assert!(keybinds.groups.iter().any(|group| group.id == TUI_GROUP));
+        assert_eq!(
+            crate::input::group_entries(&keybinds, CUSTOM_GROUP).len(),
+            2
+        );
+        assert!(keybinds.groups.iter().any(|group| group.id == CUSTOM_GROUP));
     }
 
     #[test]
@@ -1258,30 +1261,30 @@ command = "make"
     }
 
     #[test]
-    fn shadowed_tui_menu_opener_is_reported_only_when_the_menu_is_shown() {
-        let text = "[keys]\nopen_notification_target = \"prefix+o\"\n";
+    fn shadowed_custom_menu_opener_is_reported_only_when_the_menu_is_shown() {
+        let text = "[keys]\nopen_notification_target = \"prefix+c\"\n";
         let without_tuis: Config = toml::from_str(text).unwrap();
         let diagnostics = without_tuis.collect_diagnostics();
         assert!(
-            !has_diagnostic(&diagnostics, &["keys.tui_menu"]),
+            !has_diagnostic(&diagnostics, &["keys.custom_menu"]),
             "{diagnostics:?}"
         );
 
-        let mut with_tui: Config = toml::from_str(text).unwrap();
-        with_tui.tuis = vec![crate::config::TuiConfig {
+        let mut with_custom: Config = toml::from_str(text).unwrap();
+        with_custom.custom = vec![crate::config::CustomEntry {
             id: "yazi".into(),
             key: "f".into(),
             title: "yazi".into(),
             description: None,
             command: vec!["yazi".into()],
             platforms: None,
-            kind: crate::config::TuiKind::Popup,
+            kind: crate::config::CustomKind::Popup,
             width: None,
             height: None,
         }];
-        let diagnostics = with_tui.collect_diagnostics();
+        let diagnostics = with_custom.collect_diagnostics();
         assert!(
-            has_diagnostic(&diagnostics, &["prefix+o", "keys.tui_menu"]),
+            has_diagnostic(&diagnostics, &["prefix+c", "keys.custom_menu"]),
             "{diagnostics:?}"
         );
     }

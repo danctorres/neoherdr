@@ -2,7 +2,7 @@ use crate::popup_size::PopupSize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum TuiKind {
+pub(crate) enum CustomKind {
     #[default]
     Popup,
     Tab,
@@ -10,7 +10,7 @@ pub(crate) enum TuiKind {
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(default)]
-pub(crate) struct TuiConfig {
+pub(crate) struct CustomEntry {
     pub id: String,
     pub key: String,
     pub title: String,
@@ -18,12 +18,12 @@ pub(crate) struct TuiConfig {
     pub command: Vec<String>,
     pub platforms: Option<Vec<String>>,
     #[serde(rename = "type")]
-    pub kind: TuiKind,
+    pub kind: CustomKind,
     pub width: Option<PopupSize>,
     pub height: Option<PopupSize>,
 }
 
-impl Default for TuiConfig {
+impl Default for CustomEntry {
     fn default() -> Self {
         Self {
             id: String::new(),
@@ -32,15 +32,15 @@ impl Default for TuiConfig {
             description: None,
             command: Vec::new(),
             platforms: None,
-            kind: TuiKind::Popup,
+            kind: CustomKind::Popup,
             width: None,
             height: None,
         }
     }
 }
 
-/// The keys a `[[tui]]` table may contain; anything else is reported.
-const TUI_FIELDS: &[&str] = &[
+/// The keys a `[[custom]]` table may contain; anything else is reported.
+const CUSTOM_FIELDS: &[&str] = &[
     "id",
     "key",
     "title",
@@ -52,19 +52,19 @@ const TUI_FIELDS: &[&str] = &[
     "height",
 ];
 
-/// Validates the `[[tui]]` entries of `config.toml`.
+/// Validates the `[[custom]]` entries of `config.toml`.
 ///
-/// `value` is the top-level `tui` key, if present. Each entry is validated
+/// `value` is the top-level `custom` key, if present. Each entry is validated
 /// independently: an invalid entry is skipped with a diagnostic naming its
-/// field path (`tui[0].key`) and the remaining entries still load.
-pub(crate) fn parse_tuis(value: Option<&toml::Value>) -> (Vec<TuiConfig>, Vec<String>) {
+/// field path (`custom[0].key`) and the remaining entries still load.
+pub(crate) fn parse_custom(value: Option<&toml::Value>) -> (Vec<CustomEntry>, Vec<String>) {
     let Some(value) = value else {
         return (Vec::new(), Vec::new());
     };
     let Some(entries) = value.as_array() else {
         return (
             Vec::new(),
-            vec!["invalid tui config: tui must be a list of [[tui]] tables; ignoring tui".into()],
+            vec!["invalid custom config: custom must be a list of [[custom]] tables; ignoring custom".into()],
         );
     };
     let mut result = Vec::new();
@@ -78,11 +78,11 @@ pub(crate) fn parse_tuis(value: Option<&toml::Value>) -> (Vec<TuiConfig>, Vec<St
         "windows"
     };
     for (index, entry) in entries.iter().enumerate() {
-        let field = format!("tui[{index}]");
+        let field = format!("custom[{index}]");
         if let Some(table) = entry.as_table() {
             for key in table
                 .keys()
-                .filter(|key| !TUI_FIELDS.contains(&key.as_str()))
+                .filter(|key| !CUSTOM_FIELDS.contains(&key.as_str()))
             {
                 diagnostics.push(format!(
                     "unknown config key {field}.{}; ignoring key",
@@ -90,17 +90,17 @@ pub(crate) fn parse_tuis(value: Option<&toml::Value>) -> (Vec<TuiConfig>, Vec<St
                 ));
             }
         }
-        let tui: TuiConfig = match entry.clone().try_into() {
-            Ok(tui) => tui,
+        let custom: CustomEntry = match entry.clone().try_into() {
+            Ok(custom) => custom,
             Err(err) => {
-                diagnostics.push(format!("invalid tui[{index}]: {err}"));
+                diagnostics.push(format!("invalid custom[{index}]: {err}"));
                 continue;
             }
         };
-        if tui.id.trim().is_empty()
-            || tui.title.trim().is_empty()
-            || tui.key.trim().is_empty()
-            || !tui
+        if custom.id.trim().is_empty()
+            || custom.title.trim().is_empty()
+            || custom.key.trim().is_empty()
+            || !custom
                 .id
                 .bytes()
                 .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
@@ -108,21 +108,21 @@ pub(crate) fn parse_tuis(value: Option<&toml::Value>) -> (Vec<TuiConfig>, Vec<St
             diagnostics.push(format!("{field} requires id, key, and title"));
             continue;
         }
-        if tui.key.contains('+') || tui.key.chars().count() != 1 {
+        if custom.key.contains('+') || custom.key.chars().count() != 1 {
             diagnostics.push(format!("{field}.key must be one submenu-local key"));
             continue;
         }
-        if tui.command.is_empty() || tui.command.iter().any(|arg| arg.is_empty()) {
+        if custom.command.is_empty() || custom.command.iter().any(|arg| arg.is_empty()) {
             diagnostics.push(format!(
                 "{field}.command must contain non-empty argv values"
             ));
             continue;
         }
-        if !ids.insert(tui.id.clone()) {
-            diagnostics.push(format!("duplicate tui id: {}", tui.id));
+        if !ids.insert(custom.id.clone()) {
+            diagnostics.push(format!("duplicate custom id: {}", custom.id));
             continue;
         }
-        if let Some(platforms) = &tui.platforms {
+        if let Some(platforms) = &custom.platforms {
             if platforms
                 .iter()
                 .any(|platform| !matches!(platform.as_str(), "linux" | "macos" | "windows"))
@@ -131,7 +131,7 @@ pub(crate) fn parse_tuis(value: Option<&toml::Value>) -> (Vec<TuiConfig>, Vec<St
                 continue;
             }
         }
-        if tui
+        if custom
             .platforms
             .as_ref()
             .is_some_and(|platforms| !platforms.iter().any(|p| p == platform))
@@ -139,12 +139,12 @@ pub(crate) fn parse_tuis(value: Option<&toml::Value>) -> (Vec<TuiConfig>, Vec<St
             diagnostics.push(format!("{field} is unsupported on {platform}"));
             continue;
         }
-        result.push(tui);
+        result.push(custom);
     }
     (result, diagnostics)
 }
 
-/// A `[[tui]]` key as written in a TOML path: bare when it can be, quoted
+/// A `[[custom]]` key as written in a TOML path: bare when it can be, quoted
 /// otherwise.
 fn format_key(key: &str) -> String {
     if !key.is_empty()
@@ -162,13 +162,13 @@ fn format_key(key: &str) -> String {
 mod tests {
     use super::*;
 
-    fn parse_tuis_str(content: &str) -> (Vec<TuiConfig>, Vec<String>) {
+    fn parse_custom_str(content: &str) -> (Vec<CustomEntry>, Vec<String>) {
         let value: toml::Value = content.parse().unwrap();
-        parse_tuis(value.get("tui"))
+        parse_custom(value.get("custom"))
     }
 
     /// The copy-paste recipe documented in configuration.mdx.
-    const RECIPE: &str = include_str!("../../tests/fixtures/tui-recipe.toml");
+    const RECIPE: &str = include_str!("../../tests/fixtures/custom-recipe.toml");
     const CONFIGURATION_DOCS: &str =
         include_str!("../../docs/next/website/src/content/docs/configuration.mdx");
 
@@ -193,11 +193,17 @@ mod tests {
 
     #[test]
     fn documented_recipe_parses_without_diagnostics() {
-        let (tuis, diagnostics) = parse_tuis_str(RECIPE);
+        let (parsed, diagnostics) = parse_custom_str(RECIPE);
         assert!(diagnostics.is_empty(), "{diagnostics:?}");
-        let entries: Vec<_> = tuis
+        let entries: Vec<_> = parsed
             .iter()
-            .map(|tui| (tui.id.as_str(), tui.key.as_str(), tui.command.clone()))
+            .map(|custom| {
+                (
+                    custom.id.as_str(),
+                    custom.key.as_str(),
+                    custom.command.clone(),
+                )
+            })
             .collect();
         assert_eq!(
             entries,
@@ -208,59 +214,59 @@ mod tests {
                 ("btop", "b", vec!["btop".to_string()]),
             ]
         );
-        assert!(tuis.iter().all(|tui| tui.kind == TuiKind::Popup));
+        assert!(parsed.iter().all(|custom| custom.kind == CustomKind::Popup));
     }
 
     #[test]
     fn missing_tui_key_yields_no_entries_and_no_diagnostics() {
-        let (tuis, diagnostics) = parse_tuis(None);
-        assert!(tuis.is_empty());
+        let (parsed, diagnostics) = parse_custom(None);
+        assert!(parsed.is_empty());
         assert!(diagnostics.is_empty());
     }
 
     #[test]
     fn non_array_tui_key_is_reported() {
-        let (tuis, diagnostics) = parse_tuis_str("tui = 5\n");
-        assert!(tuis.is_empty());
+        let (parsed, diagnostics) = parse_custom_str("custom = 5\n");
+        assert!(parsed.is_empty());
         assert_eq!(diagnostics.len(), 1);
-        assert!(diagnostics[0].contains("[[tui]]"), "{diagnostics:?}");
+        assert!(diagnostics[0].contains("[[custom]]"), "{diagnostics:?}");
     }
 
     #[test]
     fn diagnostics_keep_indexed_field_paths() {
-        let (tuis, diagnostics) = parse_tuis_str(
-            r#"[[tui]]
+        let (parsed, diagnostics) = parse_custom_str(
+            r#"[[custom]]
 id = "ok"
 key = "o"
 title = "Ok"
 command = ["ok"]
 
-[[tui]]
+[[custom]]
 id = "bad-key"
 key = "prefix+g"
 title = "Bad"
 command = ["bad"]
 
-[[tui]]
+[[custom]]
 id = "bad-command"
 key = "c"
 title = "Bad"
 command = [""]
 "#,
         );
-        assert_eq!(tuis.len(), 1);
+        assert_eq!(parsed.len(), 1);
         assert_eq!(
             diagnostics,
             vec![
-                "tui[1].key must be one submenu-local key".to_string(),
-                "tui[2].command must contain non-empty argv values".to_string(),
+                "custom[1].key must be one submenu-local key".to_string(),
+                "custom[2].command must contain non-empty argv values".to_string(),
             ]
         );
     }
 
     #[test]
     fn parses_valid_tui_entries() {
-        let value: TuiConfig = toml::from_str(
+        let value: CustomEntry = toml::from_str(
             r#"id = "git"
             key = "g"
 title = "Git"
@@ -273,7 +279,7 @@ command = ["lazygit", "--use-config"]
 
     #[test]
     fn parses_launch_type_with_popup_default() {
-        let omitted: TuiConfig = toml::from_str(
+        let omitted: CustomEntry = toml::from_str(
             r#"id = "git"
 key = "g"
 title = "Git"
@@ -281,9 +287,9 @@ command = ["lazygit"]
 "#,
         )
         .unwrap();
-        assert_eq!(omitted.kind, TuiKind::Popup);
+        assert_eq!(omitted.kind, CustomKind::Popup);
 
-        let popup: TuiConfig = toml::from_str(
+        let popup: CustomEntry = toml::from_str(
             r#"id = "git"
 key = "g"
 title = "Git"
@@ -292,9 +298,9 @@ type = "popup"
 "#,
         )
         .unwrap();
-        assert_eq!(popup.kind, TuiKind::Popup);
+        assert_eq!(popup.kind, CustomKind::Popup);
 
-        let tab: TuiConfig = toml::from_str(
+        let tab: CustomEntry = toml::from_str(
             r#"id = "nvim"
 key = "n"
 title = "Nvim"
@@ -303,12 +309,12 @@ type = "tab"
 "#,
         )
         .unwrap();
-        assert_eq!(tab.kind, TuiKind::Tab);
+        assert_eq!(tab.kind, CustomKind::Tab);
     }
 
     #[test]
     fn rejects_unknown_launch_type() {
-        let result: Result<TuiConfig, _> = toml::from_str(
+        let result: Result<CustomEntry, _> = toml::from_str(
             r#"id = "git"
 key = "g"
 title = "Git"
@@ -321,20 +327,20 @@ type = "fullscreen"
 
     #[test]
     fn skips_duplicate_and_unsupported_entries_independently() {
-        let (tuis, diagnostics) = parse_tuis_str(
-            r#"[[tui]]
+        let (parsed, diagnostics) = parse_custom_str(
+            r#"[[custom]]
 id = "same"
 key = "prefix+g"
 title = "one"
 command = ["one"]
 
-[[tui]]
+[[custom]]
 id = "same"
 key = "h"
 title = "two"
 command = ["two"]
 
-[[tui]]
+[[custom]]
 id = "other"
 key = "b"
 title = "other"
@@ -342,42 +348,42 @@ command = ["other"]
 platforms = ["not-a-platform"]
 "#,
         );
-        assert_eq!(tuis.len(), 1);
+        assert_eq!(parsed.len(), 1);
         assert_eq!(diagnostics.len(), 2);
     }
 
     #[test]
     fn skips_unknown_launch_type_independently() {
-        let (tuis, diagnostics) = parse_tuis_str(
-            r#"[[tui]]
+        let (parsed, diagnostics) = parse_custom_str(
+            r#"[[custom]]
 id = "bad"
 key = "x"
 title = "Bad"
 command = ["x"]
 type = "fullscreen"
 
-[[tui]]
+[[custom]]
 id = "git"
 key = "g"
 title = "Git"
 command = ["lazygit"]
 "#,
         );
-        assert_eq!(tuis.len(), 1);
-        assert_eq!(tuis[0].id, "git");
-        assert_eq!(tuis[0].kind, TuiKind::Popup);
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].id, "git");
+        assert_eq!(parsed[0].kind, CustomKind::Popup);
         assert!(
             diagnostics
                 .iter()
-                .any(|diag| diag.contains("invalid tui[0]")),
+                .any(|diag| diag.contains("invalid custom[0]")),
             "{diagnostics:?}"
         );
     }
 
     #[test]
     fn unknown_keys_inside_tui_entries_are_reported() {
-        let (tuis, diagnostics) = parse_tuis_str(
-            r#"[[tui]]
+        let (parsed, diagnostics) = parse_custom_str(
+            r#"[[custom]]
 id = "git"
 key = "g"
 title = "Git"
@@ -386,12 +392,12 @@ platfroms = ["windows"]
 "widht.x" = "80%"
 "#,
         );
-        assert_eq!(tuis.len(), 1);
+        assert_eq!(parsed.len(), 1);
         assert_eq!(
             diagnostics,
             vec![
-                "unknown config key tui[0].platfroms; ignoring key".to_string(),
-                "unknown config key tui[0].\"widht.x\"; ignoring key".to_string(),
+                "unknown config key custom[0].platfroms; ignoring key".to_string(),
+                "unknown config key custom[0].\"widht.x\"; ignoring key".to_string(),
             ]
         );
     }

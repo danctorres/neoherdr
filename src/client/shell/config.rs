@@ -143,7 +143,7 @@ impl ClientShellConfig {
                     keybinds: config.keybinds(),
                 }),
             local_keys: config.keys.clone(),
-            tuis: config.tuis.clone(),
+            custom: config.custom.clone(),
             keybinding_source: ClientShellKeybindingSource::Local,
             prompt_new_tab_name: config.ui.prompt_new_tab_name,
             prompt_new_workspace_name: config.ui.prompt_new_workspace_name,
@@ -239,7 +239,7 @@ impl ClientShellConfig {
             ClientShellKeybindingSource::Local => {
                 let mut config = crate::config::Config {
                     keys: self.local_keys.clone(),
-                    tuis: self.tuis.clone(),
+                    custom: self.custom.clone(),
                     ..Default::default()
                 };
                 let local_commands = config.keys.command.clone();
@@ -389,7 +389,7 @@ impl ClientShellConfig {
             match config.live_keybinds_with_diagnostics() {
                 Ok((mut keybinds, keybind_diagnostics)) => {
                     self.local_keys = config.keys.clone();
-                    self.tuis = config.tuis.clone();
+                    self.custom = config.custom.clone();
                     if self.keybinding_source == ClientShellKeybindingSource::RemoteLocal {
                         keybinds.keybinds.clear_custom_commands();
                     }

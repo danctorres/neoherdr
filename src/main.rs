@@ -189,7 +189,7 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # agent_menu = "prefix+a"     # n new agent tab, a jump to notification, j/k next/previous agent
 # git_menu = "prefix+g"       # n new worktree, o open worktree, x remove worktree
 # system_menu = "prefix+s"    # , settings, r reload config, b toggle sidebar, ? keybinds, q detach
-# tui_menu = "prefix+o"       # the [[tui]] entries below
+# custom_menu = "prefix+c"    # the [[custom]] entries below
 # Any menu action can also get its own binding, e.g. rename_tab = "prefix+comma".
 
 # Navigate-mode movement. These local shortcuts win while navigate mode is open.
@@ -444,12 +444,12 @@ pane_history = false
 # Matches Ghostty's default scrollback-limit behavior.
 # scrollback_limit_bytes = 10000000
 
-# System TUIs for the open menu (prefix+o). Each key is local to that menu.
+# Your own programs for the custom menu (prefix+c). Each key is local to that menu.
 # command is an argv list, quoted and run through your interactive shell
 # (default_shell, else $SHELL) so rc-file PATH and exports apply; on Windows
 # it runs directly.
 # type = "popup" (default) or "tab"; width/height apply to popups.
-# [[tui]]
+# [[custom]]
 # id = "lazygit"
 # key = "g"
 # title = "lazygit"
