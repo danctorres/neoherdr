@@ -697,6 +697,29 @@ impl ClientShellState {
                     ClientShellMode::Terminal
                 };
                 if let Some(group) = self.active_key_group.clone() {
+                    if self.key_group_walking {
+                        if let Some(binding) = crate::input::resolve_group_key(
+                            &self.config.keybinds.keybinds,
+                            &group,
+                            key,
+                        )
+                        .filter(|binding| {
+                            matches!(binding, crate::input::KeybindMatch::Action(action) if action.repeats_in_menu())
+                        }) {
+                            self.record_binding(binding, outcome);
+                            return None;
+                        }
+                        self.active_key_group = None;
+                        self.mode = return_mode;
+                        self.clear_key_hint();
+                        outcome.repaint = true;
+                        // Esc and Enter only end the walk; any other key is
+                        // handled as if the menu had already closed.
+                        if matches!(key.code, KeyCode::Esc | KeyCode::Enter) {
+                            return None;
+                        }
+                        return self.route_key_press(key, outcome);
+                    }
                     if key.code == KeyCode::Esc {
                         self.active_key_group = None;
                         self.maybe_show_prefix_key_hint();
@@ -719,6 +742,14 @@ impl ClientShellState {
                                 _ => true,
                             })
                     {
+                        if matches!(&binding, crate::input::KeybindMatch::Action(action) if action.repeats_in_menu())
+                        {
+                            self.key_group_walking = true;
+                            self.maybe_show_key_group_hint(&group);
+                            outcome.repaint = true;
+                            self.record_binding(binding, outcome);
+                            return None;
+                        }
                         self.active_key_group = None;
                         self.mode = return_mode;
                         self.clear_key_hint();
@@ -750,6 +781,7 @@ impl ClientShellState {
                     crate::input::resolve_prefix_binding(&self.config.keybinds.keybinds, key)
                 {
                     if let crate::input::KeybindMatch::Group(group) = binding {
+                        self.key_group_walking = false;
                         self.maybe_show_key_group_hint(&group);
                         self.refresh_plugin_actions_for_group(&group, outcome);
                         self.active_key_group = Some(group);
