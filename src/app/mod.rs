@@ -525,6 +525,7 @@ impl App {
             selected,
             mode,
             should_quit: false,
+            forget_agents_on_exit: false,
             request_client_config_reload: false,
             worktree_directory,
             latest_release_notes,
@@ -2567,6 +2568,25 @@ mod tests {
 
         assert_eq!(response["result"]["type"], "ok");
         assert!(app.state.should_quit);
+    }
+
+    #[test]
+    fn server_quit_request_quits_and_can_forget_agents() {
+        for forget_agents in [false, true] {
+            let mut app = test_app();
+
+            let response = app.handle_api_request(crate::api::schema::Request {
+                id: "req_server_quit".into(),
+                method: crate::api::schema::Method::ServerQuit(
+                    crate::api::schema::ServerQuitParams { forget_agents },
+                ),
+            });
+            let response: serde_json::Value = serde_json::from_str(&response).unwrap();
+
+            assert_eq!(response["result"]["type"], "ok");
+            assert!(app.state.should_quit);
+            assert_eq!(app.state.forget_agents_on_exit, forget_agents);
+        }
     }
 
     #[test]

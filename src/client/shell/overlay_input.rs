@@ -1077,12 +1077,35 @@ impl ClientShellState {
         );
     }
 
+    /// Stopping the server ends every agent on it, so it is always confirmed.
+    pub(super) fn confirm_quit(&mut self, forget_agents: bool, outcome: &mut ClientShellInput) {
+        self.overlay = Some(ClientShellOverlay::ConfirmClose(
+            ClientConfirmCloseOverlay {
+                workspace_id: String::new(),
+                close_group: false,
+                tab_target: None,
+                quit: Some(forget_agents),
+                title: "Quit and stop every agent?".to_owned(),
+                detail: if forget_agents {
+                    "The next start restores the layout without agents".to_owned()
+                } else {
+                    "The next start restores the layout and reopens agents".to_owned()
+                },
+            },
+        ));
+        outcome.repaint = true;
+    }
+
     pub(super) fn accept_close_confirmation(&mut self, outcome: &mut ClientShellInput) {
         let Some(ClientShellOverlay::ConfirmClose(confirm)) = self.overlay.take() else {
             return;
         };
         outcome.repaint = true;
-        let method = if let Some(target) = confirm.tab_target {
+        let method = if let Some(forget_agents) = confirm.quit {
+            crate::api::schema::Method::ServerQuit(crate::api::schema::ServerQuitParams {
+                forget_agents,
+            })
+        } else if let Some(target) = confirm.tab_target {
             if target.workspace.endpoint_id != self.active_endpoint_id
                 || !self.navigation_target_valid(&target.workspace)
                 || !self.snapshot.as_deref().is_some_and(|snapshot| {
@@ -1208,6 +1231,7 @@ impl ClientShellState {
                 workspace_id,
                 close_group: closes_group,
                 tab_target,
+                quit: None,
                 title: if closes_group {
                     "Close worktree group?".to_owned()
                 } else {

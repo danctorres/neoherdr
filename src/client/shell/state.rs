@@ -643,6 +643,9 @@ pub(super) struct ClientConfirmCloseOverlay {
     pub(super) workspace_id: String,
     pub(super) close_group: bool,
     pub(super) tab_target: Option<ClientTabCloseConfirmation>,
+    /// Confirms stopping the server instead of closing a workspace; the value
+    /// is `server.quit`'s `forget_agents`.
+    pub(super) quit: Option<bool>,
     pub(super) title: String,
     pub(super) detail: String,
 }
@@ -1323,6 +1326,9 @@ impl ClientShellState {
             crate::input::KeybindAction::NewAgentTab => {
                 self.active_endpoint_advertises("agent.kinds")
                     && self.active_endpoint_advertises("agent.open_tab")
+            }
+            crate::input::KeybindAction::Quit | crate::input::KeybindAction::QuitForgetAgents => {
+                self.active_endpoint_advertises("server.quit")
             }
             _ => true,
         }

@@ -60,6 +60,17 @@ impl ClientShellState {
                     self.begin_agent_tab(outcome);
                     return;
                 }
+                if matches!(
+                    action,
+                    crate::input::KeybindAction::Quit
+                        | crate::input::KeybindAction::QuitForgetAgents
+                ) {
+                    self.confirm_quit(
+                        action == crate::input::KeybindAction::QuitForgetAgents,
+                        outcome,
+                    );
+                    return;
+                }
                 if action == crate::input::KeybindAction::OpenNavigator {
                     self.open_navigator_overlay();
                     outcome.repaint = true;

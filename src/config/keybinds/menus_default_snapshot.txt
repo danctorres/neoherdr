@@ -43,6 +43,8 @@ group system "system" opener=["prefix+s"] user=false
   b ["b"] Builtin(ToggleSidebar) "toggle sidebar"
   ? ["?"] Builtin(Help) "keybinds"
   q ["q"] Builtin(Detach) "detach"
+  x ["x"] Builtin(Quit) "quit: stop server and agents"
+  shift+x ["shift+x"] Builtin(QuitForgetAgents) "quit and forget agents"
 prefix w +workspace
 prefix t +tab
 prefix p +pane
@@ -143,3 +145,5 @@ help system menu (prefix+s)
   b toggle sidebar
   ? keybinds
   q detach
+  x quit: stop server and agents
+  shift+x quit and forget agents

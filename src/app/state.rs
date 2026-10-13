@@ -799,6 +799,9 @@ pub struct AppState {
     pub selected: usize,
     pub mode: Mode,
     pub should_quit: bool,
+    /// Set by `server.quit`: the session saved on the way out keeps the
+    /// layout but not the agents.
+    pub forget_agents_on_exit: bool,
     /// Set when the headless server should ask attached clients to reload
     /// their client-local sound config from disk.
     pub request_client_config_reload: bool,
@@ -1045,6 +1048,7 @@ impl AppState {
             selected: 0,
             mode: Mode::Navigate,
             should_quit: false,
+            forget_agents_on_exit: false,
             request_client_config_reload: false,
             worktree_directory: std::path::PathBuf::from("/tmp/herdr-worktrees"),
             latest_release_notes: None,

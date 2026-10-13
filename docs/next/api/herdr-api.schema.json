@@ -3893,6 +3893,17 @@
           },
           "type": "object"
         },
+        "ServerQuitParams": {
+          "description": "Stops the server and every pane, like `server.stop`, from an attached\nclient.",
+          "properties": {
+            "forget_agents": {
+              "default": false,
+              "description": "Leave the agents out of the saved session, so the next start restores\nthe layout with plain shells.",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
         "ServerSshAgentRegisterParams": {
           "properties": {
             "socket_path": {
@@ -4717,6 +4728,22 @@
             },
             "params": {
               "$ref": "#/schemas/request/$defs/EmptyParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "server.quit",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ServerQuitParams"
             }
           },
           "required": [

@@ -106,6 +106,10 @@ pub(crate) enum KeybindAction {
     /// Agent-menu member only: agents are listed in a picker, so there is no
     /// flat `keys.*` override to configure.
     NewAgentTab,
+    /// System-menu members only: stopping the server is confirmed, not a
+    /// one-chord key.
+    Quit,
+    QuitForgetAgents,
     NewTab,
     RenameTab,
     PreviousTab,
@@ -265,8 +269,11 @@ const FLAT_ACTIONS: &[FlatAction] = &[
 
 /// Actions that exist only as menu entries: agents are listed in a picker,
 /// so there is no flat `keys.*` field to configure.
-const MENU_ONLY_ACTIONS: &[(&str, KeybindAction)] =
-    &[("new_agent_tab", KeybindAction::NewAgentTab)];
+const MENU_ONLY_ACTIONS: &[(&str, KeybindAction)] = &[
+    ("new_agent_tab", KeybindAction::NewAgentTab),
+    ("quit", KeybindAction::Quit),
+    ("quit_forget_agents", KeybindAction::QuitForgetAgents),
+];
 
 /// Every non-indexed action with its own `keys.<action>` binding, in help
 /// order. Shared by key resolution and the help projections.
@@ -314,6 +321,8 @@ impl KeybindAction {
             Self::PreviousAgent => "previous agent",
             Self::NextAgent => "next agent",
             Self::NewAgentTab => "new agent tab",
+            Self::Quit => "quit: stop server and agents",
+            Self::QuitForgetAgents => "quit and forget agents",
             Self::NewTab => "new tab",
             Self::RenameTab => "rename tab",
             Self::PreviousTab => "previous tab",
