@@ -50,20 +50,20 @@ You can also press `prefix+s r` (system menu, reload config), or open the global
 
 Reload applies most UI settings without restarting panes. Startup-only settings still need a restart.
 
-## System TUIs
+## Custom menu
 
-Declare system-installed terminal applications as `[[tui]]` entries in
-`config.toml`. Herdr does not install or bundle these programs.
+Declare your own programs, such as system-installed terminal applications, as
+`[[custom]]` entries in `config.toml`. Herdr does not install or bundle these programs.
 
 Each entry supplies a menu-local key, display metadata, and argv command. The
-configured TUIs form the `open` menu, which opens with `prefix+o` by default
-and is shown only when at least one TUI is configured; change `keys.tui_menu`
+entries form the `custom` menu, which opens with `prefix+c` by default
+and is shown only when at least one entry is configured; change `keys.custom_menu`
 to choose another opener.
 
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `id` | yes | Stable identifier: letters, digits, `.`, `_`, `-`. Unique across entries. |
-| `key` | yes | One key, local to the `open` menu (no `prefix+` or modifiers). |
+| `key` | yes | One key, local to the `custom` menu (no `prefix+` or modifiers). |
 | `title` | yes | Label shown in which-key and help. |
 | `description` | no | Longer text shown after the title, as `title: description`. |
 | `command` | yes | Argv list, for example `["gh", "dash"]`. Quoted and passed unchanged, with no shell expansion. |
@@ -74,14 +74,14 @@ to choose another opener.
 The menu and each member appear in which-key and help. Members use only their
 local key inside the menu, never a top-level prefix binding. A popup entry
 uses the focused pane's working directory when available. On Linux and macOS
-each TUI starts through your interactive shell (`terminal.default_shell`, else
+each entry starts through your interactive shell (`terminal.default_shell`, else
 `$SHELL`), so a `PATH` entry or token such as `GH_TOKEN` exported from
 `.zshrc` applies just as in a new tab. If a command is absent, its popup shows a
 short message and waits for Enter, so entries for tools you have not installed
-are harmless. A TUI that exits with an error keeps its popup or tab open with
+are harmless. A program that exits with an error keeps its popup or tab open with
 its output and a `press Enter to close` line; a clean exit closes it at once.
 Invalid entries are reported independently, with their field
-path such as `tui[0].key`, so valid entries remain usable.
+path such as `custom[0].key`, so valid entries remain usable.
 
 Reload the running server after editing with `herdr server reload-config`.
 
@@ -91,7 +91,7 @@ Paste this block into `config.toml` for four common TUIs. Each key is the
 tool's own mnemonic: `g`it, `d`ash, `f`iles, `b`top.
 
 ```toml
-[[tui]]
+[[custom]]
 id = "lazygit"
 key = "g"
 title = "lazygit"
@@ -100,7 +100,7 @@ command = ["lazygit"]
 width = "95%"
 height = "95%"
 
-[[tui]]
+[[custom]]
 id = "gh-dash"
 key = "d"
 title = "gh-dash"
@@ -109,7 +109,7 @@ command = ["gh", "dash"]
 width = "95%"
 height = "95%"
 
-[[tui]]
+[[custom]]
 id = "yazi"
 key = "f"
 title = "yazi"
@@ -118,7 +118,7 @@ command = ["yazi"]
 width = "90%"
 height = "90%"
 
-[[tui]]
+[[custom]]
 id = "btop"
 key = "b"
 title = "btop"
@@ -260,7 +260,7 @@ Each menu opener is a normal keybinding field, so you can move or unbind it:
 | `agent_menu` | `prefix+a` | `agent` |
 | `git_menu` | `prefix+g` | `git` |
 | `system_menu` | `prefix+s` | `system` |
-| `tui_menu` | `prefix+o` | `open` |
+| `custom_menu` | `prefix+c` | `custom` |
 
 Keys inside a menu are fixed and pressed without the prefix once the menu is open; see [Keyboard](/docs/keyboard/#menus) for every entry. If one of your own bindings takes a default opener key, for example a custom command on `prefix+s`, your binding wins and a config diagnostic suggests setting `keys.system_menu` to another key.
 
@@ -355,7 +355,7 @@ description = "apply layout"
 
 ### Adding commands to menus
 
-A `[[keys.command]]` entry with `group = "<id>"` joins a menu instead of taking a top-level key. The id is one of the built-in menus (`workspace`, `tab`, `pane`, `agent`, `git`, `system`, `open`) or a menu you open yourself with `type = "group"`. A member's `key` is a bare key such as `"d"`, not a `prefix+` binding. A member on the same key as a built-in entry replaces that entry in the menu. For example, to add worktrunk's remove action to the git menu:
+A `[[keys.command]]` entry with `group = "<id>"` joins a menu instead of taking a top-level key. The id is one of the built-in menus (`workspace`, `tab`, `pane`, `agent`, `git`, `system`, `custom`) or a menu you open yourself with `type = "group"`. A member's `key` is a bare key such as `"d"`, not a `prefix+` binding. A member on the same key as a built-in entry replaces that entry in the menu. For example, to add worktrunk's remove action to the git menu:
 
 ```toml
 [[keys.command]]

@@ -318,7 +318,7 @@ impl App {
                 self.state.host_terminal_appearance,
             )?;
         if let Some(tui_argv) = &binding.argv {
-            // Configured TUIs stay open with an exit notice when they fail.
+            // `[[custom]]` entries stay open with an exit notice when they fail.
             terminal.hold_on_failure = tui_argv.first().cloned();
         }
         let pane_id = self.state.workspaces[ws_idx].tabs[tab_idx].root_pane;
@@ -330,7 +330,7 @@ impl App {
         Ok(())
     }
 
-    /// Configured TUI argv wrapped to run through the user's shell.
+    /// `[[custom]]` argv wrapped to run through the user's shell.
     fn user_shell_launch_argv(&self, argv: &[String]) -> Vec<String> {
         crate::pane::user_shell_launch_argv(
             crate::pane::PaneShellConfig::new(&self.state.default_shell, self.state.shell_mode),

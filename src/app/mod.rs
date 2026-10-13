@@ -3478,7 +3478,7 @@ mod tests {
         let tool = "herdr-popup-tui-not-on-server-path";
         let binding = tui_binding(
             crate::config::CustomCommandAction::Popup,
-            "tui:tool",
+            "custom:tool",
             Some(&[tool]),
         );
 
@@ -3524,7 +3524,7 @@ mod tests {
 
         let found = tui_binding(
             crate::config::CustomCommandAction::Popup,
-            "tui:dev",
+            "custom:dev",
             Some(&["./bin/dev-tui"]),
         );
         app.execute_custom_command_binding(&found, None).unwrap();
@@ -3533,7 +3533,7 @@ mod tests {
 
         let missing = tui_binding(
             crate::config::CustomCommandAction::Popup,
-            "tui:other",
+            "custom:other",
             Some(&["./bin/other-tui"]),
         );
         app.execute_custom_command_binding(&missing, None).unwrap();

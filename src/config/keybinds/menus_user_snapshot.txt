@@ -45,7 +45,7 @@ group system "system" opener=["prefix+s"] user=false
   q ["q"] Builtin(Detach) "detach"
   x ["x"] Builtin(Quit) "quit: stop server and agents"
   shift+x ["shift+x"] Builtin(QuitForgetAgents) "quit and forget agents"
-group open "open TUI" opener=["prefix+o"] user=false
+group custom "custom" opener=["prefix+c"] user=false
   f ["f"] Command(3) "yazi"
 group scripts "scripts" opener=["prefix+m"] user=true
   b ["b"] Command(0) "build"
@@ -56,7 +56,7 @@ prefix p +pane
 prefix a +agent
 prefix g +git
 prefix s +system
-prefix o +open TUI
+prefix c +custom
 prefix m +scripts
 prefix e +empty
 prefix h/j/k/l focus pane
@@ -69,7 +69,7 @@ prefix z zoom pane
 prefix x close pane
 prefix r resize mode
 prefix y copy mode
-prefix c new tab
+prefix v new tab
 prefix [/] previous / next tab
 prefix {/} move tab left / right
 prefix / session navigator
@@ -85,7 +85,7 @@ help global
   prefix+a +agent
   prefix+g +git
   prefix+s +system
-  prefix+o +open TUI
+  prefix+c +custom
   prefix+m +scripts
   prefix+e +empty
   prefix+h/j/k/l focus pane
@@ -98,7 +98,7 @@ help global
   prefix+x close pane
   prefix+r resize mode
   prefix+y copy mode
-  prefix+c new tab
+  prefix+v new tab
   prefix+[/] previous / next tab
   prefix+{/} move tab left / right
   prefix+/ session navigator
@@ -159,7 +159,7 @@ help system menu (prefix+s)
   q detach
   x quit: stop server and agents
   shift+x quit and forget agents
-help open TUI menu (prefix+o)
+help custom menu (prefix+c)
   f yazi
 help scripts menu (prefix+m)
   b build

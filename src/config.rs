@@ -1,5 +1,6 @@
 use crossterm::event::{KeyCode, KeyModifiers};
 
+mod custom;
 mod io;
 mod keybinds;
 mod model;
@@ -7,7 +8,6 @@ mod sidebar;
 mod sound;
 mod tab_bar;
 mod theme;
-mod tuis;
 mod window_title;
 mod write;
 
@@ -39,8 +39,8 @@ pub use self::{
     window_title::{WindowTitlePart, WindowTitleTemplate, WindowTitleToken},
 };
 
+pub(crate) use self::custom::{CustomEntry, CustomKind};
 pub(crate) use self::keybinds::{parse_key_combo, KeyGroupAction, WORKSPACE_GROUP};
-pub(crate) use self::tuis::{TuiConfig, TuiKind};
 pub(crate) use self::write::{update_file_at, write_edit, ConfigEdit};
 pub(crate) use self::{
     io::upsert_top_level_bool,
@@ -190,7 +190,7 @@ impl Config {
         // profile on it; the client invokes the endpoint command by id, so
         // `pane` carries the same entry, as in the command manifest.
         let tui_commands = self
-            .tui_command_configs()
+            .custom_command_configs()
             .into_iter()
             .map(|mut command| {
                 if command.action_type == CommandKeybindType::Tab {
@@ -302,14 +302,14 @@ prefix = ["ctrl+space", "ctrl+s"]
     #[test]
     fn local_keybindings_profile_publishes_tab_tuis_as_pane_entries() {
         let config = Config {
-            tuis: vec![TuiConfig {
+            custom: vec![CustomEntry {
                 id: "nvim".into(),
                 key: "n".into(),
                 title: "Nvim".into(),
                 description: None,
                 command: vec!["nvim".into()],
                 platforms: None,
-                kind: TuiKind::Tab,
+                kind: CustomKind::Tab,
                 width: None,
                 height: None,
             }],
@@ -334,8 +334,8 @@ prefix = ["ctrl+space", "ctrl+s"]
             .keybinds
             .groups
             .iter()
-            .find(|group| group.id == "open")
-            .expect("TUI menu");
+            .find(|group| group.id == "custom")
+            .expect("custom menu");
         assert!(open.members.iter().any(|member| member.label == "n"));
     }
 
@@ -353,22 +353,25 @@ prefix = "ctrl+b"
     }
 
     #[test]
-    fn local_keybindings_profile_publishes_configured_tuis() {
+    fn local_keybindings_profile_publishes_custom_entries() {
         let mut config = Config::default();
-        config.tuis = vec![TuiConfig {
+        config.custom = vec![CustomEntry {
             id: "lazygit".into(),
             key: "g".into(),
             title: "lazygit".into(),
             description: Some("open lazygit".into()),
             command: vec!["lazygit".into()],
             platforms: None,
-            kind: crate::config::TuiKind::Popup,
+            kind: crate::config::CustomKind::Popup,
             width: None,
             height: None,
         }];
 
         let profile = config.local_keybindings_profile_toml().unwrap();
-        assert!(profile.contains("command = \"tui:lazygit\""), "{profile}");
+        assert!(
+            profile.contains("command = \"custom:lazygit\""),
+            "{profile}"
+        );
         assert!(profile.contains("key = \"g\""), "{profile}");
         let keybinds = keybindings_from_profile_toml(&profile).unwrap();
         assert!(
@@ -376,7 +379,7 @@ prefix = "ctrl+b"
                 .keybinds
                 .custom_commands
                 .iter()
-                .any(|command| command.command == "tui:lazygit"),
+                .any(|command| command.command == "custom:lazygit"),
             "{keybinds:?}"
         );
     }
@@ -384,20 +387,20 @@ prefix = "ctrl+b"
     #[test]
     fn local_keybindings_profile_publishes_tuis_on_builtin_group_keys() {
         let mut config = Config::default();
-        config.tuis = vec![TuiConfig {
+        config.custom = vec![CustomEntry {
             id: "yazi".into(),
             key: "f".into(),
             title: "yazi".into(),
             description: Some("open yazi".into()),
             command: vec!["yazi".into()],
             platforms: None,
-            kind: crate::config::TuiKind::Popup,
+            kind: crate::config::CustomKind::Popup,
             width: None,
             height: None,
         }];
 
         let profile = config.local_keybindings_profile_toml().unwrap();
-        assert!(profile.contains("tui:yazi"), "{profile}");
+        assert!(profile.contains("custom:yazi"), "{profile}");
     }
 
     #[test]

@@ -1,4 +1,4 @@
-[[tui]]
+[[custom]]
 id = "lazygit"
 key = "g"
 title = "lazygit"
@@ -7,7 +7,7 @@ command = ["lazygit"]
 width = "95%"
 height = "95%"
 
-[[tui]]
+[[custom]]
 id = "gh-dash"
 key = "d"
 title = "gh-dash"
@@ -16,7 +16,7 @@ command = ["gh", "dash"]
 width = "95%"
 height = "95%"
 
-[[tui]]
+[[custom]]
 id = "yazi"
 key = "f"
 title = "yazi"
@@ -25,7 +25,7 @@ command = ["yazi"]
 width = "90%"
 height = "90%"
 
-[[tui]]
+[[custom]]
 id = "btop"
 key = "b"
 title = "btop"

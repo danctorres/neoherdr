@@ -323,10 +323,10 @@ pub struct Config {
     pub advanced: AdvancedConfig,
     pub experimental: ExperimentalConfig,
     pub remote: RemoteConfig,
-    /// `[[tui]]` entries. Validated per entry after deserialization so one
-    /// bad entry does not reject the whole config; see `config::tuis`.
+    /// `[[custom]]` entries. Validated per entry after deserialization so one
+    /// bad entry does not reject the whole config; see `config::custom`.
     #[serde(skip)]
-    pub(crate) tuis: Vec<super::TuiConfig>,
+    pub(crate) custom: Vec<super::CustomEntry>,
 }
 
 #[derive(Debug)]
@@ -490,8 +490,8 @@ pub struct KeysConfig {
     pub git_menu: BindingConfig,
     /// Open the system menu (settings, reload config, sidebar, help, detach). Default: "prefix+s"
     pub system_menu: BindingConfig,
-    /// Open the menu of TUIs configured as [[tui]] entries. Only shown when at least one TUI is configured. Default: "prefix+o"
-    pub tui_menu: BindingConfig,
+    /// Open the menu of programs configured as [[custom]] entries. Only shown when at least one entry is configured. Default: "prefix+c"
+    pub custom_menu: BindingConfig,
     #[serde(skip_serializing)]
     pub(crate) user_fields: BTreeSet<&'static str>,
 }
@@ -652,7 +652,7 @@ pub(crate) struct KeysConfigOverlay {
     #[serde(skip_serializing_if = "Option::is_none")]
     system_menu: Option<BindingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    tui_menu: Option<BindingConfig>,
+    custom_menu: Option<BindingConfig>,
 }
 
 impl KeysConfigOverlay {
@@ -779,7 +779,7 @@ impl<'de> Deserialize<'de> for KeysConfig {
         apply_field!(agent_menu);
         apply_field!(git_menu);
         apply_field!(system_menu);
-        apply_field!(tui_menu);
+        apply_field!(custom_menu);
 
         Ok(keys)
     }
@@ -896,7 +896,7 @@ impl KeysConfig {
         copy_effective_action_field!(agent_menu, keybinds.agent_menu);
         copy_effective_action_field!(git_menu, keybinds.git_menu);
         copy_effective_action_field!(system_menu, keybinds.system_menu);
-        copy_effective_action_field!(tui_menu, keybinds.tui_menu);
+        copy_effective_action_field!(custom_menu, keybinds.custom_menu);
 
         profile
     }
@@ -1282,7 +1282,7 @@ impl Default for KeysConfig {
             agent_menu: BindingConfig::one("prefix+a"),
             git_menu: BindingConfig::one("prefix+g"),
             system_menu: BindingConfig::one("prefix+s"),
-            tui_menu: BindingConfig::one("prefix+o"),
+            custom_menu: BindingConfig::one("prefix+c"),
             user_fields: BTreeSet::new(),
         }
     }
