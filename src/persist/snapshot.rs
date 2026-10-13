@@ -371,8 +371,25 @@ fn capture_tab(
                     value: session.session_ref.value.clone(),
                 })
         });
+        // An agent with no session yet, such as one waiting for its first
+        // prompt, is started afresh on restore. A pane launched with a command
+        // of its own, such as a tmux attach, is not the agent's to restart,
+        // unless that command is the agent itself, as in an agent tab.
+        let relaunch = terminal
+            .filter(|_| agent_session.is_none())
+            .and_then(|terminal| terminal.effective_known_agent())
+            .filter(|agent| {
+                let executable = crate::detect::interactive_agent_executable(*agent);
+                launch_argv.as_ref().is_none_or(|argv| {
+                    argv.last().is_some_and(|last| {
+                        last.strip_prefix("exec ").unwrap_or(last) == executable
+                    })
+                })
+            })
+            .map(crate::agent_resume::ReportedAgentResume::relaunch);
         let agent_resume = terminal
             .and_then(|terminal| terminal.reported_resume())
+            .or(relaunch.as_ref())
             .map(|resume| PaneAgentResumeSnapshot {
                 source: resume.source.clone(),
                 agent: resume.agent.clone(),
@@ -1337,6 +1354,40 @@ mod tests {
         assert_eq!(resume.source, "prime-agent");
         assert_eq!(resume.agent, "prime-agent");
         assert_eq!(resume.argv, vec!["prime-agent", "--resume", "a"]);
+    }
+
+    #[test]
+    fn capture_saves_a_relaunch_for_an_agent_without_a_session() {
+        let mut state = state_with_workspaces(&["one"]);
+        let root = state.workspaces[0].tabs[0].root_pane;
+        state.ensure_test_terminals();
+        let terminal_id = state.workspaces[0].tabs[0].panes[&root]
+            .attached_terminal_id
+            .clone();
+        let saved_resume = |state: &AppState| {
+            capture_from_state(state).workspaces[0].tabs[0].panes[&root.raw()]
+                .agent_resume
+                .clone()
+        };
+        assert_eq!(saved_resume(&state), None);
+
+        state
+            .terminals
+            .get_mut(&terminal_id)
+            .unwrap()
+            .detected_agent = Some(crate::detect::Agent::OpenCode);
+        let resume = saved_resume(&state).expect("relaunch should be captured");
+        assert_eq!(resume.source, crate::agent_resume::RELAUNCH_SOURCE);
+        assert_eq!(resume.argv, vec!["opencode"]);
+
+        let mut launched_with = |argv: &[&str]| {
+            state.terminals.get_mut(&terminal_id).unwrap().launch_argv =
+                Some(argv.iter().map(|arg| arg.to_string()).collect());
+            saved_resume(&state)
+        };
+        assert_eq!(launched_with(&["sh", "-c", "tmux attach"]), None);
+        // An agent tab launches the agent itself through the user's shell.
+        assert!(launched_with(&["zsh", "-lic", "exec opencode"]).is_some());
     }
 
     #[test]

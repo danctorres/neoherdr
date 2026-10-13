@@ -35,7 +35,19 @@ pub struct ReportedAgentResume {
     pub argv: Vec<String>,
 }
 
+/// Source of a saved command that starts the agent afresh: the pane had a
+/// running agent with no session to resume.
+pub const RELAUNCH_SOURCE: &str = "neoherdr:relaunch";
+
 impl ReportedAgentResume {
+    pub fn relaunch(agent: crate::detect::Agent) -> Self {
+        Self {
+            source: RELAUNCH_SOURCE.into(),
+            agent: crate::detect::agent_label(agent).into(),
+            argv: vec![crate::detect::interactive_agent_executable(agent).into()],
+        }
+    }
+
     /// The same command can name different sessions in different directories,
     /// for example `agent --continue`, so the directory is part of its identity.
     pub fn plan(&self, cwd: &Path) -> AgentResumePlan {
