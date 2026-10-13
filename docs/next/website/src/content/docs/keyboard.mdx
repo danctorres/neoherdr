@@ -38,7 +38,7 @@ The default keys follow five rules, so once you know them you can guess most bin
 4. **One key per action.** A menu entry that also has a top-level key uses the same key in the menu: `x` closes, `z` zooms, `\` and `-` split, `;` goes to the last pane, and `y` enters copy mode, whether you press them after the prefix or inside `prefix+p`.
 5. **Keys mirror the screen.** Tabs are a horizontal bar, so they use `h`/`l` (and `[`/`]` at the top level); workspaces and agents are vertical lists, so they use `j`/`k`. Shift turns "go to" into "move": `H`/`L` and `{`/`}` move a tab, `J`/`K` move a workspace, `shift+h/j/k/l` swaps panes, and `:` (shifted `;`) swaps with the last pane. Split keys look like the divider they draw: `\` splits side by side, `-` stacks.
 
-The few keys that no rule covers follow common convention: `c` clears, `e` opens your editor, `,` opens settings, `?` shows help, `q` detaches, and `R` undoes the name that `r` set.
+The few keys that no rule covers follow common convention: `c` clears, `e` opens your editor, `,` opens settings, `?` shows help, `q` detaches, and `R` undoes the name that `r` set. In the system menu `x` closes the server itself, and `X` is the more final form of the same verb: it also forgets the agents.
 
 The which-key popup lists the top level in the same groups as the table below, pane actions first, and shows each direction set as one entry, such as `h/j/k/l focus pane`.
 
@@ -134,6 +134,8 @@ System, `prefix+s`:
 | `b` | Toggle sidebar |
 | `?` | Keybind help |
 | `q` | Detach |
+| `x` | Quit: stop the server and every agent, after a confirmation. The next start restores the layout and reopens the agents |
+| `X` | Quit and forget agents: the same, but the next start restores the layout with plain shells |
 
 Open, `prefix+o`: the TUIs you configure as [`[[tui]]` entries](/docs/configuration/#system-tuis), each on its own key. The menu appears only when at least one TUI is configured.
 

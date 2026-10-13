@@ -2981,7 +2981,9 @@ impl HeadlessServer {
         let skip_default_workspace = skip_default_workspace_for_request
             || matches!(
                 &msg.request.method,
-                api::schema::Method::ServerStop(_) | api::schema::Method::ServerLiveHandoff(_)
+                api::schema::Method::ServerStop(_)
+                    | api::schema::Method::ServerQuit(_)
+                    | api::schema::Method::ServerLiveHandoff(_)
             );
         changed |= self.drain_all_internal_events_with_forwarding();
         if self.host_shutdown_requested() {

@@ -106,6 +106,7 @@ fn destructive_buttons_keep_their_own_foreground_when_accent_text_changes() {
             workspace_id: "ws_1".into(),
             close_group: false,
             tab_target: None,
+            quit: None,
             title: "close".into(),
             detail: "confirm".into(),
         }),

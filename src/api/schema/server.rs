@@ -32,6 +32,16 @@ crate::cli::projection::cli_params! {
     }
 }
 
+/// Stops the server and every pane, like `server.stop`, from an attached
+/// client.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ServerQuitParams {
+    /// Leave the agents out of the saved session, so the next start restores
+    /// the layout with plain shells.
+    #[serde(default)]
+    pub forget_agents: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ServerSshAgentRegisterParams {
     /// Absolute remote-host agent socket. Registration lasts until this API connection closes.

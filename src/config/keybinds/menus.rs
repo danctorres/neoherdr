@@ -93,6 +93,8 @@ pub(super) struct MenuEntry {
 ///   a name that `r` set
 /// - the rest follow common convention: `c` clear, `e` editor, `,`
 ///   settings, `?` help, `q` detach
+/// - in the system menu `x` closes the server itself, and shift marks the
+///   more final form of that verb: `X` also forgets the agents
 /// - agents get no per-agent keys: `n` in the agent menu opens a picker of
 ///   the agents installed on the runtime host, so no default key depends on
 ///   what is installed
@@ -150,6 +152,8 @@ command = [
   { group = "system", key = "b", action = "toggle_sidebar" },
   { group = "system", key = "?", action = "help" },
   { group = "system", key = "q", action = "detach" },
+  { group = "system", key = "x", action = "quit" },
+  { group = "system", key = "shift+x", action = "quit_forget_agents" },
 
   { type = "group", group = "open", description = "open TUI" },
 ]

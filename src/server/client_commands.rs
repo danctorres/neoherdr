@@ -259,6 +259,10 @@ mod tests {
             Some("c68f7405369bca24f07460192b31cda351a7d129dc8dabb4d9535a4784813e11")
         );
         assert_eq!(
+            actual.remove("server.quit").as_deref(),
+            Some("99a12bd6b7790fce387fab97c7ecb5b3da443d109d25dfce9c14f37f1b6a3c88")
+        );
+        assert_eq!(
             actual.remove("agent.open_tab").as_deref(),
             Some("7e24dc602630d43b2727500368d2edf58f8529d477e920632ee5f52ee2829c5b")
         );
