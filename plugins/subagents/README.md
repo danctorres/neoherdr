@@ -9,7 +9,7 @@ them. This plugin follows the record each agent keeps of its subagents instead.
 |---|---|
 | Claude Code | `<config>/projects/*/<session>/subagents/*.jsonl` |
 | omp | the directory named after the parent session file |
-| pi | same as omp, for a subagent extension that saves sessions the same way |
+| pi | `<parent session>/<id>/run-<N>/session.jsonl` for pi-subagents; also the omp layout, for an extension that saves sessions that way |
 | OpenCode | child sessions in `opencode.db` |
 
 ## What it does
