@@ -45,34 +45,34 @@ fn state_with_worktrunk_group() -> ClientShellState {
     ClientShellState::new(ClientShellConfig::from_config(&config))
 }
 
-fn state_with_tui() -> ClientShellState {
+fn state_with_custom_entry() -> ClientShellState {
     let mut config = Config::default();
     config.keys.show_which_key = true;
-    config.tuis.push(crate::config::TuiConfig {
+    config.custom.push(crate::config::CustomEntry {
         id: "git".into(),
         key: "g".into(),
         title: "Git UI".into(),
         description: Some("open git UI".into()),
         command: vec!["lazygit".into()],
         platforms: None,
-        kind: crate::config::TuiKind::Popup,
+        kind: crate::config::CustomKind::Popup,
         width: None,
         height: None,
     });
     ClientShellState::new(ClientShellConfig::from_config(&config))
 }
 
-fn state_with_yazi_tui() -> ClientShellState {
+fn state_with_yazi_entry() -> ClientShellState {
     let mut config = Config::default();
     config.keys.show_which_key = true;
-    config.tuis.push(crate::config::TuiConfig {
+    config.custom.push(crate::config::CustomEntry {
         id: "yazi".into(),
         key: "f".into(),
         title: "yazi".into(),
         description: Some("open yazi".into()),
         command: vec!["yazi".into()],
         platforms: None,
-        kind: crate::config::TuiKind::Popup,
+        kind: crate::config::CustomKind::Popup,
         width: None,
         height: None,
     });
@@ -155,7 +155,7 @@ fn entering_prefix_populates_hint_when_enabled() {
 
 #[test]
 fn tui_binding_is_discoverable_in_prefix_hint() {
-    let mut state = state_with_tui();
+    let mut state = state_with_custom_entry();
     assert!(!state.config.keybinds.keybinds.custom_commands.is_empty());
     press(&mut state, prefix_key());
 
@@ -165,10 +165,10 @@ fn tui_binding_is_discoverable_in_prefix_hint() {
         .expect("which-key hint")
         .bindings
         .iter()
-        .any(|(key, label)| key == "o" && label == "+open TUI"));
-    press(&mut state, plain_key(crossterm::event::KeyCode::Char('o')));
+        .any(|(key, label)| key == "c" && label == "+custom"));
+    press(&mut state, plain_key(crossterm::event::KeyCode::Char('c')));
     assert_eq!(
-        state.key_hint.expect("TUI submenu").bindings,
+        state.key_hint.expect("custom submenu").bindings,
         vec![(
             "g".into(),
             std::borrow::Cow::Borrowed("Git UI: open git UI")
@@ -177,24 +177,24 @@ fn tui_binding_is_discoverable_in_prefix_hint() {
 }
 
 #[test]
-fn tui_key_is_local_to_its_menu() {
-    // A TUI on `f` lives inside the `open` menu and never shadows a
+fn custom_key_is_local_to_its_menu() {
+    // An entry on `f` lives inside the `custom` menu and never shadows a
     // top-level key or another menu's entries.
-    let mut state = state_with_yazi_tui();
+    let mut state = state_with_yazi_entry();
     press(&mut state, prefix_key());
-    press(&mut state, plain_key(crossterm::event::KeyCode::Char('o')));
+    press(&mut state, plain_key(crossterm::event::KeyCode::Char('c')));
 
     assert_eq!(state.mode, ClientShellMode::Prefix);
-    assert_eq!(state.active_key_group.as_deref(), Some("open"));
+    assert_eq!(state.active_key_group.as_deref(), Some("custom"));
     assert_eq!(
-        state.key_hint.expect("TUI submenu").bindings,
+        state.key_hint.expect("custom submenu").bindings,
         vec![("f".into(), std::borrow::Cow::Borrowed("yazi: open yazi"))]
     );
 }
 
 #[test]
-fn snapshot_keeps_configured_tui_submenu() {
-    let mut state = state_with_tui();
+fn snapshot_keeps_custom_submenu() {
+    let mut state = state_with_custom_entry();
     state.set_snapshot(Box::new(snapshot()));
     press(&mut state, prefix_key());
     assert!(state
@@ -203,7 +203,7 @@ fn snapshot_keeps_configured_tui_submenu() {
         .expect("which-key hint")
         .bindings
         .iter()
-        .any(|(key, label)| key == "o" && label == "+open TUI"));
+        .any(|(key, label)| key == "c" && label == "+custom"));
 }
 
 #[test]

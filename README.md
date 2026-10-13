@@ -26,7 +26,7 @@
 - **which-key menus** — `prefix` opens a grouped menu of every action; the menus are config, so you can rearrange them or add built-in actions to your own. [keyboard →](docs/next/website/src/content/docs/keyboard.mdx)
 - **keymap rules** — default keys follow five written rules (hot path is one key, menus are nouns, one verb vocabulary, one key per action, keys mirror the screen), so you can guess most bindings.
 - **agent picker** — `prefix+a n` lists the agents installed on the session's machine and opens one in a new tab.
-- **configured tuis** — declare `[[tui]]` entries in `config.toml` and open them from `prefix+o`. [configuration →](docs/next/website/src/content/docs/configuration.mdx)
+- **custom menu** — declare your own programs as `[[custom]]` entries in `config.toml` and open them from `prefix+c`. [configuration →](docs/next/website/src/content/docs/configuration.mdx)
 - **failed panes stay open** — an agent or tui that exits with an error keeps its output on screen until you press enter.
 - **launching through your shell** — agents and tuis start through your interactive shell, so rc-file `PATH` and exported keys reach them.
 - **bundled worktrunk** — `prefix+g` then `s`, `l`, or `m` drives the [`wt`](https://worktrunk.dev) worktree cli; without `wt`, the popup offers to install it.

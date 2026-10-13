@@ -401,11 +401,11 @@ description = "worktrunk: remove"
 A user entry on `s`, `l`, or `m` in the git menu replaces the default worktrunk
 entry on that key.
 
-## System TUIs
+## System programs
 
-For system-installed TUIs, add `[[tui]]` entries to your `config.toml`, as
-described in [Configuration](/docs/configuration/#system-tuis). Configured TUIs appear in
-the `prefix+o` menu.
+For system-installed TUIs, add `[[custom]]` entries to your `config.toml`, as
+described in [Configuration](/docs/configuration/#custom-menu). They appear in
+the `prefix+c` custom menu.
 This keeps binaries and their lifecycle outside Herdr while still providing
 popup actions and which-key discovery. Use a plugin instead when the integration
 needs hooks, events, or other plugin-owned behavior.

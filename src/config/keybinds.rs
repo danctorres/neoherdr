@@ -15,7 +15,7 @@ use std::borrow::Cow;
 use self::menus::{
     add_group, builtin_group_opener, default_menu_entries, group_is_defined,
     parse_group_member_bindings, parse_menu_opener_bindings, report_shadowed_menu_openers,
-    resolve_groups, MenuEntry, TUI_GROUP,
+    resolve_groups, MenuEntry, CUSTOM_GROUP,
 };
 pub(crate) use self::menus::{KeyGroup, KeyGroupAction, WORKSPACE_GROUP};
 
@@ -155,7 +155,7 @@ pub struct CommandKeybindConfig {
     /// only together with `group`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub action: Option<String>,
-    /// Exact argv for configured TUIs; never read from or written to config.
+    /// Exact argv for `[[custom]]` entries; never read from or written to config.
     #[serde(skip)]
     pub(crate) argv: Option<Vec<String>>,
 }
@@ -459,7 +459,7 @@ pub struct Keybinds {
     pub agent_menu: ActionKeybinds,
     pub git_menu: ActionKeybinds,
     pub system_menu: ActionKeybinds,
-    pub tui_menu: ActionKeybinds,
+    pub custom_menu: ActionKeybinds,
     pub custom_commands: Vec<CustomCommandKeybind>,
     pub(crate) groups: Vec<KeyGroup>,
 }
@@ -655,7 +655,7 @@ impl Config {
             agent_menu: empty_action!(),
             git_menu: empty_action!(),
             system_menu: empty_action!(),
-            tui_menu: empty_action!(),
+            custom_menu: empty_action!(),
             custom_commands: Vec::new(),
             groups: Vec::new(),
         };
@@ -838,7 +838,7 @@ impl Config {
             apply_menu!(keybinds.agent_menu, agent_menu, source);
             apply_menu!(keybinds.git_menu, git_menu, source);
             apply_menu!(keybinds.system_menu, system_menu, source);
-            apply_menu!(keybinds.tui_menu, tui_menu, source);
+            apply_menu!(keybinds.custom_menu, custom_menu, source);
 
             if source == field_source!(indexed) {
                 append_legacy_indexed_bindings(
@@ -882,8 +882,8 @@ impl Config {
                     &mut registry,
                     &mut diagnostics,
                     &mut menu_entries,
-                    "tui",
-                    &self.tui_command_configs(),
+                    "custom",
+                    &self.custom_command_configs(),
                     source,
                 );
             } else {
@@ -1167,37 +1167,37 @@ fn push_custom_command(
 }
 
 impl Config {
-    /// The configured TUIs as members of the `open` menu, in the same shape
+    /// The `[[custom]]` entries as members of the `custom` menu, in the same shape
     /// as `[[keys.command]]` entries so the server keymap and the published
     /// client keybinding profile share one representation.
-    pub(crate) fn tui_command_configs(&self) -> Vec<CommandKeybindConfig> {
-        self.tuis
+    pub(crate) fn custom_command_configs(&self) -> Vec<CommandKeybindConfig> {
+        self.custom
             .iter()
-            .map(|tui| {
-                let action_type = match tui.kind {
-                    super::TuiKind::Popup => CommandKeybindType::Popup,
-                    super::TuiKind::Tab => CommandKeybindType::Tab,
+            .map(|custom| {
+                let action_type = match custom.kind {
+                    super::CustomKind::Popup => CommandKeybindType::Popup,
+                    super::CustomKind::Tab => CommandKeybindType::Tab,
                 };
                 // Full-screen apps rarely fit the generic half-size popup.
                 let (width, height) = if action_type == CommandKeybindType::Popup {
                     let default = Some(crate::popup_size::PopupSize::Percent(90));
-                    (tui.width.or(default), tui.height.or(default))
+                    (custom.width.or(default), custom.height.or(default))
                 } else {
                     (None, None)
                 };
                 CommandKeybindConfig {
-                    key: BindingConfig::one(tui.key.clone()),
-                    command: format!("tui:{}", tui.id),
-                    argv: Some(tui.command.clone()),
+                    key: BindingConfig::one(custom.key.clone()),
+                    command: format!("custom:{}", custom.id),
+                    argv: Some(custom.command.clone()),
                     action_type,
                     // The title leads so the menu names the program it opens.
-                    description: Some(match &tui.description {
-                        Some(description) => format!("{}: {description}", tui.title),
-                        None => tui.title.clone(),
+                    description: Some(match &custom.description {
+                        Some(description) => format!("{}: {description}", custom.title),
+                        None => custom.title.clone(),
                     }),
                     width,
                     height,
-                    group: Some(TUI_GROUP.into()),
+                    group: Some(CUSTOM_GROUP.into()),
                     action: None,
                 }
             })
@@ -2148,7 +2148,7 @@ next_tab = "prefix+n"
             ("agent_menu", &keybinds.agent_menu),
             ("git_menu", &keybinds.git_menu),
             ("system_menu", &keybinds.system_menu),
-            ("tui_menu", &keybinds.tui_menu),
+            ("custom_menu", &keybinds.custom_menu),
         ] {
             for binding in &bindings.bindings {
                 check(&mut main, field, binding.trigger);
