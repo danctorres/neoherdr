@@ -31,3 +31,11 @@ key = "b"
 title = "btop"
 description = "system monitor"
 command = ["btop"]
+
+[[custom]]
+id = "nvim"
+key = "n"
+title = "nvim"
+description = "editor in a new tab"
+command = ["nvim"]
+type = "tab"

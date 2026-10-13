@@ -87,8 +87,9 @@ Reload the running server after editing with `herdr server reload-config`.
 
 ### Example recipe
 
-Paste this block into `config.toml` for four common TUIs. Each key is the
-tool's own mnemonic: `g`it, `d`ash, `f`iles, `b`top.
+Paste this block into `config.toml` for five common TUIs. Each key is the
+tool's own mnemonic: `g`it, `d`ash, `f`iles, `b`top, `n`vim. The first four open
+as popups; nvim opens in a new tab.
 
 ```toml
 [[custom]]
@@ -124,6 +125,14 @@ key = "b"
 title = "btop"
 description = "system monitor"
 command = ["btop"]
+
+[[custom]]
+id = "nvim"
+key = "n"
+title = "nvim"
+description = "editor in a new tab"
+command = ["nvim"]
+type = "tab"
 ```
 
 Install hints:
@@ -132,6 +141,7 @@ Install hints:
 - gh-dash: install the GitHub CLI (`gh`), then `gh extension install dlvhdr/gh-dash`.
 - yazi: `brew install yazi`, or `cargo install --locked yazi-fm yazi-cli`.
 - btop: `brew install btop`, or your distribution's `btop` package.
+- nvim: `brew install neovim`, or your distribution's `neovim` package.
 
 Themes, sidebar layouts, copy behavior, and other presentation settings come from the client's local config, including when viewing an SSH machine. Pane defaults, worktrees, integrations, and custom commands belong to the server where the panes run. The UI's `reload config` action reloads both the client's local settings and the selected server's config. Local keybindings reload too; `--remote-keybindings server` instead uses the selected server's keybindings.
 

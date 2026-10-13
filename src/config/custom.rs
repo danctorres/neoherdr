@@ -212,9 +212,12 @@ mod tests {
                 ("gh-dash", "d", vec!["gh".to_string(), "dash".to_string()]),
                 ("yazi", "f", vec!["yazi".to_string()]),
                 ("btop", "b", vec!["btop".to_string()]),
+                ("nvim", "n", vec!["nvim".to_string()]),
             ]
         );
-        assert!(parsed.iter().all(|custom| custom.kind == CustomKind::Popup));
+        assert!(parsed
+            .iter()
+            .all(|custom| (custom.kind == CustomKind::Tab) == (custom.id == "nvim")));
     }
 
     #[test]

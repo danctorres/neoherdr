@@ -73,6 +73,8 @@ run your agents, split panes, walk away. `ctrl+b q` detaches, `neoherdr` reattac
 
 the keymap and configuration differ from upstream, so read this fork's pages in the repo: [keyboard](docs/next/website/src/content/docs/keyboard.mdx) · [configuration](docs/next/website/src/content/docs/configuration.mdx). inside neoherdr, `prefix` opens the which-key menu and `prefix ?` shows every binding.
 
+for a starting point, `neoherdr --default-config` prints a commented example of every setting; save it as `~/.config/neoherdr/config.toml` and uncomment what you need.
+
 everything else is shared with upstream at [herdr.dev/docs](https://herdr.dev/docs/): [quick start](https://herdr.dev/docs/quick-start/) · [concepts](https://herdr.dev/docs/concepts/) · [supported agents](https://herdr.dev/docs/agents/) · [session state](https://herdr.dev/docs/session-state/) · [connecting machines](https://herdr.dev/docs/connecting-machines/) · [remote](https://herdr.dev/docs/persistence-remote/) · [integrations](https://herdr.dev/docs/integrations/) · [plugins](https://herdr.dev/docs/plugins/) · [socket api](https://herdr.dev/docs/socket-api/)
 
 ## agent instructions
