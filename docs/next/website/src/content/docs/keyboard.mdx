@@ -69,6 +69,8 @@ Press the prefix, then one key:
 
 Press the menu key after the prefix, then the entry key without the prefix. Esc in a menu returns to the top-level which-key menu.
 
+Direction keys repeat. After a key that walks or moves along a list (`j`/`k` and `J`/`K` for workspaces, `h`/`l` and `H`/`L` for tabs, `j`/`k` for agents) the menu stays open with only those keys listed, so `prefix+a j j j k` steps through agents without pressing the prefix again. Esc or Enter ends the walk. Any other key ends it too and is then handled as usual, so it is typed into the pane rather than run as a menu entry.
+
 Workspace, `prefix+w`:
 
 | Key | Action |

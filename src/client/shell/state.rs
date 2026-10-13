@@ -979,6 +979,9 @@ pub(crate) struct ClientShellState {
     pub(super) mode: ClientShellMode,
     pub(super) key_hint: Option<KeyHintState>,
     pub(super) active_key_group: Option<String>,
+    /// A walk key ran in the open menu: only its walk keys stay live. Read
+    /// only while `active_key_group` is set.
+    pub(super) key_group_walking: bool,
     /// Qualified ids of the plugin actions the active endpoint can run, or
     /// `None` until it has answered.
     pub(super) plugin_actions: Option<HashSet<String>>,
@@ -1158,6 +1161,7 @@ impl ClientShellState {
             mode: ClientShellMode::Terminal,
             key_hint: None,
             active_key_group: None,
+            key_group_walking: false,
             plugin_actions: None,
             navigate_workspace_id: None,
             pending_workspace_highlight: None,
@@ -1305,10 +1309,16 @@ impl ClientShellState {
         if !self.config.local_keys.show_which_key {
             return;
         }
-        let entries =
-            crate::input::group_entries_where(&self.config.keybinds.keybinds, group, |action| {
+        let walking = self.key_group_walking;
+        let entries = crate::input::group_entries_where(
+            &self.config.keybinds.keybinds,
+            group,
+            |action| {
                 self.key_group_action_available(action)
-            });
+                    && (!walking
+                        || matches!(action, crate::config::KeyGroupAction::Builtin(action) if action.repeats_in_menu()))
+            },
+        );
         let title = self
             .config
             .keybinds
@@ -1317,7 +1327,8 @@ impl ClientShellState {
             .iter()
             .find(|candidate| candidate.id == group)
             .map_or(group, |candidate| candidate.description.as_str());
-        self.show_key_hint(format!("{title} · esc back"), entries);
+        let leave = if walking { "esc done" } else { "esc back" };
+        self.show_key_hint(format!("{title} · {leave}"), entries);
     }
 
     /// Built-in menu members hide when the active runtime does not advertise
