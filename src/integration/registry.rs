@@ -256,6 +256,26 @@ pub(crate) fn integration_recommendations() -> Vec<super::IntegrationRecommendat
         .collect()
 }
 
+/// Recommendations for the integrations that are already installed.
+///
+/// Unlike [`integration_recommendations`] this never searches `PATH`, whose
+/// entries can be slow mounts (WSL's Windows directories, network shares), so
+/// server startup can call it without delaying the event loop.
+pub(crate) fn installed_integration_recommendations() -> Vec<super::IntegrationRecommendation> {
+    installed_integration_statuses()
+        .into_iter()
+        .filter(|status| status.state != super::IntegrationStatusKind::NotInstalled)
+        .map(|status| super::IntegrationRecommendation {
+            target: status.target,
+            label: integration_target_label(status.target),
+            command: integration_target_command(status.target),
+            available: true,
+            path: status.path,
+            state: status.state,
+        })
+        .collect()
+}
+
 pub(crate) fn outdated_installed_integrations() -> Vec<super::IntegrationStatus> {
     installed_integration_statuses()
         .into_iter()
