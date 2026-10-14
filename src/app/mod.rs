@@ -583,7 +583,10 @@ impl App {
             theme_runtime,
             host_terminal_appearance: None,
             host_terminal_appearance_explicit: false,
-            integration_recommendations: crate::integration::integration_recommendations(),
+            // Only the installed integrations matter here (the outdated badge);
+            // the full list searches PATH and is fetched on demand.
+            integration_recommendations: crate::integration::installed_integration_recommendations(
+            ),
             agent_manifest_summaries,
             agent_manifest_update_status: crate::detect::manifest_update::load_status(),
             installed_plugins: load_plugin_registry(
