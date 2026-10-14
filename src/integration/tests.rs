@@ -508,6 +508,52 @@ fn integration_recommendations_mark_standalone_codex_available() {
 }
 
 #[test]
+fn installed_integration_recommendations_skip_path_and_uninstalled_targets() {
+    let _lock = integration_env_lock();
+    let base = unique_base();
+    let home = base.join("home");
+    let claude_hooks_dir = home.join(".claude").join("hooks");
+    fs::create_dir_all(&claude_hooks_dir).unwrap();
+    fs::write(
+        claude_hooks_dir.join(CLAUDE_HOOK_INSTALL_NAME),
+        "#!/bin/sh\n# HERDR_INTEGRATION_ID=claude\n# HERDR_INTEGRATION_VERSION=9\n",
+    )
+    .unwrap();
+    // A codex on PATH is not installed as an integration, so it stays out.
+    let bin = base.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let codex = bin.join(codex_executable_name());
+    fs::write(&codex, "").unwrap();
+    make_executable(&codex).unwrap();
+    let original_home = std::env::var_os("HOME");
+    let original_path = std::env::var_os("PATH");
+    std::env::set_var("HOME", &home);
+    std::env::set_var("PATH", &bin);
+
+    let installed = installed_integration_recommendations();
+
+    assert_eq!(installed.len(), 1, "{installed:?}");
+    assert_eq!(
+        installed[0].target,
+        crate::api::schema::IntegrationTarget::Claude
+    );
+    assert_eq!(installed[0].state, IntegrationStatusKind::Outdated);
+    assert!(installed[0].needs_install());
+
+    if let Some(home) = original_home {
+        std::env::set_var("HOME", home);
+    } else {
+        std::env::remove_var("HOME");
+    }
+    if let Some(path) = original_path {
+        std::env::set_var("PATH", path);
+    } else {
+        std::env::remove_var("PATH");
+    }
+    let _ = fs::remove_dir_all(base);
+}
+
+#[test]
 fn integration_recommendation_installs_available_or_outdated_targets() {
     let mut recommendation = IntegrationRecommendation {
         target: crate::api::schema::IntegrationTarget::Claude,
