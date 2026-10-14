@@ -179,10 +179,15 @@ def source_for(src):
 
 
 def pi_label(path):
-    """Agent name of a pi-subagents child, from its session_info record."""
+    """Agent name of a pi-subagents child, from its session_info record.
+
+    None while pi is still writing the header: the name comes before the first message.
+    """
+    started = False
     try:
         with open(path) as f:
             for line in itertools.islice(f, 20):  # the record sits near the top
+                started = started or '"message"' in line
                 if '"session_info"' not in line:
                     continue
                 m = re.fullmatch(r"subagent-(.+)-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}-\d+",
@@ -191,6 +196,8 @@ def pi_label(path):
                     return m.group(1)
     except (OSError, ValueError, AttributeError):
         pass
+    if not started:
+        return None
     return os.path.basename(os.path.dirname(os.path.dirname(path)))  # the <id> directory
 
 
@@ -230,7 +237,9 @@ def discover(kind, session):
             found[path] = os.path.basename(path)[: -len(".jsonl")]
         # pi-subagents: one level per child and per run below that directory.
         for path in glob.glob(os.path.join(stem, "*", "run-*", "session.jsonl")):
-            found[path] = pi_label(path)
+            label = pi_label(path)
+            if label:  # else picked up on a later poll, once it has a name
+                found[path] = label
     return found
 
 
@@ -431,14 +440,18 @@ def test():
 
         uuid = "bbfcc9cf-8a31-4bc1-8698-5118f7e5a58a"
         want = {}
-        for child, name, label in (("c1", "scout", "scout"), ("c2", "build-hard", "build-hard"), ("c3", None, "c3")):
+        for child, name, label in (("c1", "scout", "scout"), ("c2", "build-hard", "build-hard"), ("c3", None, "c3"),
+                                   ("c4", None, None)):  # c4: header still being written
             run = os.path.join(tmp, "parent", child, "run-0")
             os.makedirs(run)
-            want[os.path.join(run, "session.jsonl")] = label
+            if label:
+                want[os.path.join(run, "session.jsonl")] = label
             with open(os.path.join(run, "session.jsonl"), "w") as f:
                 f.write(json.dumps({"type": "session", "id": "x"}) + "\n")
                 if name:
                     f.write(json.dumps({"type": "session_info", "name": f"subagent-{name}-{uuid}-1"}) + "\n")
+                elif label:
+                    f.write(json.dumps({"type": "message"}) + "\n")
         found = discover("pi", {"kind": "path", "value": os.path.join(tmp, "parent.jsonl")})
         assert found == want, found
 
