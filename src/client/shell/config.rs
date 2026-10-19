@@ -461,8 +461,11 @@ impl ClientShellConfig {
     ) -> ClientShellLayout {
         if cols <= self.mobile_width_threshold {
             let header_height = rows.min(2);
-            // A terminal shortened by the phone keyboard keeps its rows for the pane.
-            let key_bar_height = u16::from(rows >= 10);
+            // A terminal shortened by the phone keyboard keeps its rows for the
+            // pane, and without mouse capture no tap can reach the bar.
+            let key_bar_height = u16::from(
+                rows >= 10 && cols >= super::mobile::MOBILE_KEY_BAR_MIN_WIDTH && self.mouse_capture,
+            );
             return ClientShellLayout {
                 sidebar: Rect::default(),
                 tab_bar: Rect::default(),

@@ -236,6 +236,10 @@ impl ClientShellState {
                 workspace_drop_indicator_row,
             },
         );
+        // The header's blocked count only takes a tap that reaches an agent.
+        if !self.hits.mobile_blocked.is_empty() && !self.mobile_blocked_reachable() {
+            self.hits.mobile_blocked = Rect::default();
+        }
         self.hits.panes = surface
             .panes
             .iter()
@@ -647,12 +651,11 @@ impl ClientShellState {
         }
         if let Some(overlay) = self.overlay.as_ref() {
             let mut composed = frame.to_ratatui_buffer()?;
-            let cursor = if let ClientShellOverlay::ContextMenu(menu) = overlay {
+            let (cursor, area) = if let ClientShellOverlay::ContextMenu(menu) = overlay {
                 let rendered =
                     render::render_context_menu(&mut composed, menu, &self.config.palette)?;
-                occlusion.cover(rendered.area);
                 self.hits.context_menu_rows = rendered.menu_rows;
-                None
+                (None, rendered.area)
             } else if let ClientShellOverlay::GlobalMenu(menu) = overlay {
                 let rendered = render::render_global_menu(
                     &mut composed,
@@ -661,9 +664,8 @@ impl ClientShellState {
                     snapshot,
                     &self.config.palette,
                 )?;
-                occlusion.cover(rendered.area);
                 self.hits.global_menu_rows = rendered.menu_rows;
-                None
+                (None, rendered.area)
             } else {
                 let rendered = render::render_client_overlay(
                     &mut composed,
@@ -675,7 +677,6 @@ impl ClientShellState {
                     &|action| self.key_group_action_available(action),
                     &self.config.palette,
                 )?;
-                occlusion.cover(rendered.area);
                 self.hits.overlay_primary = rendered.primary;
                 self.hits.overlay_clear = rendered.clear;
                 self.hits.overlay_cancel = rendered.cancel;
@@ -702,8 +703,13 @@ impl ClientShellState {
                 self.hits.release_notes_scrollbar = rendered.release_notes_scrollbar;
                 self.hits.release_notes_scroll_metrics = rendered.release_notes_scroll_metrics;
                 self.hits.release_notes_max_scroll = rendered.release_notes_max_scroll;
-                rendered.cursor
+                (rendered.cursor, rendered.area)
             };
+            occlusion.cover(area);
+            // Key bar cells left visible beside a dialog still take taps.
+            self.hits
+                .mobile_key_bar
+                .retain(|(cell, _)| !cell.intersects(area));
             frame.replace_from_ratatui_buffer_preserving_effects(&composed, cursor);
         }
         // Single `Option` guard on global overlay state: no per-pane/per-tab

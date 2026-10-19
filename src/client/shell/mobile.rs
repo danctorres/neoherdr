@@ -24,6 +24,10 @@ pub(super) const MOBILE_BAR_KEYS: [(&str, KeyCode, KeyModifiers); 6] = [
     ("^c", KeyCode::Char('c'), KeyModifiers::CONTROL),
 ];
 
+/// Narrowest terminal that fits every bar label: six cells of a divider plus
+/// the widest label, `enter`.
+pub(super) const MOBILE_KEY_BAR_MIN_WIDTH: u16 = 6 * 6;
+
 struct MobileItem {
     lines: Vec<Line<'static>>,
     background: Color,
@@ -96,14 +100,9 @@ pub(super) fn render_mobile_header(
     render_keys_button(buffer, keys, palette);
     let status_width = keys.x.saturating_sub(area.x).saturating_sub(1);
     let status = Rect::new(area.x, area.y, status_width, area.height);
-    render_header_status(buffer, status, snapshot, config);
+    let blocked = render_header_status(buffer, status, snapshot, config);
     // The agent counts open the blocked agent, so a push leads there in one tap.
-    hits.mobile_blocked = if status.height > 1
-        && snapshot
-            .agents
-            .iter()
-            .any(|agent| agent.agent_status == crate::api::schema::AgentStatus::Blocked)
-    {
+    hits.mobile_blocked = if blocked > 0 {
         Rect::new(status.x, status.y + 1, status.width, 1)
     } else {
         Rect::default()
@@ -111,14 +110,15 @@ pub(super) fn render_mobile_header(
     render_header_button(buffer, button, snapshot, config);
 }
 
+/// Returns the blocked count the summary row shows.
 fn render_header_status(
     buffer: &mut Buffer,
     area: Rect,
     snapshot: &ClientShellSnapshot,
     config: &ClientShellConfig,
-) {
+) -> usize {
     if area.is_empty() {
-        return;
+        return 0;
     }
     let palette = &config.palette;
     let Some(workspace) = snapshot.focused_workspace_id.as_deref().and_then(|id| {
@@ -135,7 +135,7 @@ fn render_header_status(
             " no workspace",
             Style::default().fg(palette.text).bg(palette.panel_bg),
         );
-        return;
+        return 0;
     };
     let tab_status = compact_tab_status(snapshot, workspace);
     let tab_width = display_width(&tab_status).saturating_add(1).min(area.width);
@@ -172,14 +172,15 @@ fn render_header_status(
         &tab_status,
         Style::default().fg(palette.overlay1).bg(palette.panel_bg),
     );
-    if area.height > 1 {
-        render_agent_summary(
-            buffer,
-            Rect::new(area.x, area.y + 1, area.width, 1),
-            snapshot,
-            config,
-        );
+    if area.height == 1 {
+        return 0;
     }
+    render_agent_summary(
+        buffer,
+        Rect::new(area.x, area.y + 1, area.width, 1),
+        snapshot,
+        config,
+    )
 }
 
 fn render_header_button(
@@ -262,7 +263,9 @@ pub(super) fn render_key_bar(
             width
         };
         let cell = Rect::new(x, area.y, cell_width, 1);
-        if index > 0 {
+        // Cells after the first open with a divider; the label centers in the rest.
+        let divider = u16::from(index > 0);
+        if divider > 0 {
             put_text(
                 buffer,
                 x,
@@ -272,13 +275,13 @@ pub(super) fn render_key_bar(
                 style.fg(config.palette.surface_dim),
             );
         }
-        // Every cell centers its label after a leading divider column.
         let label_width = display_width(label);
+        let inner_width = cell_width - divider;
         put_text(
             buffer,
-            x + 1 + cell_width.saturating_sub(1 + label_width) / 2,
+            x + divider + inner_width.saturating_sub(label_width) / 2,
             area.y,
-            cell_width.saturating_sub(1).min(label_width),
+            inner_width.min(label_width),
             label,
             style.fg(config.palette.text).add_modifier(Modifier::BOLD),
         );
@@ -337,12 +340,13 @@ fn compact_tab_status(snapshot: &ClientShellSnapshot, workspace: &ClientShellWor
     }
 }
 
+/// Returns the blocked count it shows.
 fn render_agent_summary(
     buffer: &mut Buffer,
     area: Rect,
     snapshot: &ClientShellSnapshot,
     config: &ClientShellConfig,
-) {
+) -> usize {
     use crate::api::schema::AgentStatus;
     let counts = [
         (AgentStatus::Blocked, "blocked"),
@@ -374,7 +378,7 @@ fn render_agent_summary(
                 .fg(config.palette.overlay1)
                 .bg(config.palette.panel_bg),
         );
-        return;
+        return 0;
     }
     if pending == 0 {
         put_text(
@@ -387,7 +391,7 @@ fn render_agent_summary(
                 .fg(config.palette.overlay1)
                 .bg(config.palette.panel_bg),
         );
-        return;
+        return 0;
     }
 
     let mut x = area.x.saturating_add(1);
@@ -462,6 +466,7 @@ fn render_agent_summary(
                 .bg(config.palette.panel_bg),
         );
     }
+    counts[0].2
 }
 
 pub(super) fn render_mobile_switcher(
@@ -483,8 +488,6 @@ pub(super) fn render_mobile_switcher(
     Clear.render(area, buffer);
     buffer.set_style(area, Style::default().bg(palette.panel_bg));
     hits.mobile_switch = Rect::default();
-    hits.mobile_key_bar.clear();
-    hits.mobile_blocked = Rect::default();
     if area.height <= 2 {
         *scroll = 0;
         put_text(
@@ -1047,6 +1050,38 @@ fn mobile_items(
 }
 
 impl ClientShellState {
+    /// Whether the header's blocked count has an agent to open: a blocked
+    /// agent in the active machine's agent list.
+    pub(super) fn mobile_blocked_reachable(&self) -> bool {
+        if self.multi_endpoint_active() {
+            return self
+                .endpoint_agent_target(crate::input::KeybindAction::NextBlockedAgent, true)
+                .is_some();
+        }
+        self.snapshot.as_deref().is_some_and(|snapshot| {
+            super::agent_sidebar::ordered_agent_pane_ids(snapshot, self.config.agent_panel_sort)
+                .iter()
+                .any(|pane_id| super::agent_sidebar::agent_is_blocked(snapshot, pane_id))
+        })
+    }
+
+    /// The header counts the active machine's agents, so its tap stays there
+    /// even when other machines are connected.
+    fn focus_mobile_blocked_agent(&mut self, outcome: &mut ClientShellInput) {
+        if self.multi_endpoint_active() {
+            if let Some(target) =
+                self.endpoint_agent_target(crate::input::KeybindAction::NextBlockedAgent, true)
+            {
+                self.focus_endpoint_agent(target, outcome);
+            }
+            return;
+        }
+        self.record_binding(
+            crate::input::KeybindMatch::Action(crate::input::KeybindAction::NextBlockedAgent),
+            outcome,
+        );
+    }
+
     pub(super) fn handle_mobile_mouse(
         &mut self,
         mouse: crossterm::event::MouseEvent,
@@ -1055,11 +1090,36 @@ impl ClientShellState {
         let mobile = self
             .last_composed_size
             .is_some_and(|(cols, rows)| !self.layout(cols, rows).mobile_header.is_empty());
-        if !mobile || self.overlay.is_some() {
+        if !mobile {
             return false;
         }
         use crossterm::event::{MouseButton, MouseEventKind};
         let point = (mouse.column, mouse.row);
+        if self.mode != ClientShellMode::Navigate
+            && mouse.kind == MouseEventKind::Down(MouseButton::Left)
+        {
+            // A tap is the key press, so it reaches the pane, a menu, a dialog,
+            // or copy mode exactly as the typed key would.
+            if let Some(&(_, index)) = self
+                .hits
+                .mobile_key_bar
+                .iter()
+                .find(|(rect, _)| super::contains(*rect, point))
+            {
+                let (_, code, modifiers) = MOBILE_BAR_KEYS[index];
+                let key = crate::input::TerminalKey::new(code, modifiers);
+                self.handle_key(key.clone(), outcome);
+                self.handle_key(
+                    key.with_kind(crossterm::event::KeyEventKind::Release),
+                    outcome,
+                );
+                outcome.repaint = true;
+                return true;
+            }
+        }
+        if self.overlay.is_some() {
+            return false;
+        }
         if mouse.kind == MouseEventKind::Down(MouseButton::Left)
             && super::contains(self.hits.mobile_keys, point)
         {
@@ -1088,28 +1148,6 @@ impl ClientShellState {
                 _ => {}
             }
         }
-        if self.mode != ClientShellMode::Navigate
-            && mouse.kind == MouseEventKind::Down(MouseButton::Left)
-        {
-            // A tap is the key press, so it reaches the pane, a menu, or copy
-            // mode exactly as the typed key would.
-            if let Some(&(_, index)) = self
-                .hits
-                .mobile_key_bar
-                .iter()
-                .find(|(rect, _)| super::contains(*rect, point))
-            {
-                let (_, code, modifiers) = MOBILE_BAR_KEYS[index];
-                let key = crate::input::TerminalKey::new(code, modifiers);
-                self.handle_key(key.clone(), outcome);
-                self.handle_key(
-                    key.with_kind(crossterm::event::KeyEventKind::Release),
-                    outcome,
-                );
-                outcome.repaint = true;
-                return true;
-            }
-        }
         if self.mode != ClientShellMode::Navigate {
             if matches!(
                 self.mode,
@@ -1117,12 +1155,7 @@ impl ClientShellState {
             ) && mouse.kind == MouseEventKind::Down(MouseButton::Left)
                 && super::contains(self.hits.mobile_blocked, point)
             {
-                self.record_binding(
-                    crate::input::KeybindMatch::Action(
-                        crate::input::KeybindAction::NextBlockedAgent,
-                    ),
-                    outcome,
-                );
+                self.focus_mobile_blocked_agent(outcome);
                 outcome.repaint = true;
                 return true;
             }

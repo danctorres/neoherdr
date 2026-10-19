@@ -17,6 +17,12 @@ pub(super) struct AgentRow {
     pub(super) rows: Vec<Vec<crate::ui::ResolvedToken>>,
 }
 
+pub(super) fn agent_is_blocked(snapshot: &ClientShellSnapshot, pane_id: &str) -> bool {
+    snapshot.agents.iter().any(|agent| {
+        agent.pane_id == pane_id && agent.agent_status == crate::api::schema::AgentStatus::Blocked
+    })
+}
+
 pub(super) fn ordered_agent_pane_ids(
     snapshot: &ClientShellSnapshot,
     sort: crate::config::AgentPanelSortConfig,

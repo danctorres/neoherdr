@@ -872,6 +872,14 @@ fn mobile_key_bar_taps_are_key_presses() {
     let esc = tap(&mut state, esc_cell);
     assert!(pane_key_codes(&esc).is_empty());
     assert_eq!(state.mode, ClientShellMode::Terminal);
+
+    // A dialog that leaves the bar visible takes the tap as its key.
+    state.open_rename_workspace_overlay();
+    state.compose(44, 30).expect("rename dialog");
+    let esc_cell = cell(&state, 0);
+    let esc = tap(&mut state, esc_cell);
+    assert!(pane_key_codes(&esc).is_empty());
+    assert!(state.overlay.is_none());
 }
 
 #[test]
@@ -917,11 +925,27 @@ fn next_blocked_agent_runs_from_the_agent_menu_and_the_mobile_header() {
     press(&mut state, plain_key(crossterm::event::KeyCode::Char('a')));
     let pressed = press(&mut state, plain_key(crossterm::event::KeyCode::Char('b')));
     assert!(focuses_pane_2(&pressed));
+    // A walk key: the menu stays open so `b` steps to the next blocked agent.
+    assert_eq!(state.mode, ClientShellMode::Prefix);
+    assert_eq!(state.active_key_group.as_deref(), Some("agent"));
+    press(&mut state, plain_key(crossterm::event::KeyCode::Esc));
 
     state.compose(44, 30).expect("mobile header");
     let blocked = state.hits.mobile_blocked;
     assert!(!blocked.is_empty());
     assert!(focuses_pane_2(&tap(&mut state, blocked)));
+
+    // An agent view that hides the blocked agent leaves nothing to tap.
+    let mut filtered = state.snapshot.as_deref().expect("snapshot").clone();
+    filtered.revision += 1;
+    filtered.agent_view_label = Some("idle".into());
+    filtered.agent_order = vec!["pane_1".into()];
+    state.set_snapshot(Box::new(filtered));
+    let mut surface = surface();
+    surface.projection_revision += 1;
+    state.set_pane_surface(surface);
+    state.compose(44, 30).expect("filtered header");
+    assert!(state.hits.mobile_blocked.is_empty());
 }
 
 /// A tap presses the row's key label, so every label naming one key must

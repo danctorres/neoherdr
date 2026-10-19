@@ -96,10 +96,6 @@ impl ClientShellState {
                     self.focus_visible_notification(outcome);
                     return;
                 }
-                if action == crate::input::KeybindAction::NextBlockedAgent {
-                    self.focus_next_blocked_agent(outcome);
-                    return;
-                }
                 if action == crate::input::KeybindAction::ReloadConfig {
                     self.push_endpoint_method_with_kind(
                         crate::api::schema::Method::ServerReloadConfig(
@@ -975,7 +971,9 @@ impl ClientShellState {
                     pane_id: agents.get(index)?.clone(),
                 }))
             }
-            KeybindAction::PreviousAgent | KeybindAction::NextAgent => {
+            KeybindAction::PreviousAgent
+            | KeybindAction::NextAgent
+            | KeybindAction::NextBlockedAgent => {
                 let agents = super::agent_sidebar::ordered_agent_pane_ids(
                     snapshot,
                     self.config.agent_panel_sort,
@@ -993,6 +991,15 @@ impl ClientShellState {
                     (Some(current), KeybindAction::NextAgent) => (current + 1) % agents.len(),
                     (None, KeybindAction::PreviousAgent) => agents.len() - 1,
                     (None, KeybindAction::NextAgent) => 0,
+                    (_, KeybindAction::NextBlockedAgent) => {
+                        super::aggregate_navigation::next_matching_index(
+                            agents.len(),
+                            current,
+                            |index| {
+                                super::agent_sidebar::agent_is_blocked(snapshot, &agents[index])
+                            },
+                        )?
+                    }
                     _ => unreachable!("relative agent action"),
                 };
                 let pane_id = agents[next].clone();
