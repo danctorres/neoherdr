@@ -455,6 +455,7 @@ impl ClientShellState {
         restore_mode_bar(&mut frame, mode_bar, mode_bar_cells.as_deref());
         self.hits.notification_toast = Rect::default();
         let has_config_diagnostic = self.config_diagnostic.is_some();
+        let above_key_bar = Rect::new(0, 0, cols, rows - layout.mobile_key_bar.height);
         let active_lifecycle = self
             .endpoints
             .iter()
@@ -505,7 +506,7 @@ impl ClientShellState {
                 } else {
                     endpoint_notices::render_mobile_banner(
                         &mut composed,
-                        Rect::new(0, 0, cols, rows),
+                        above_key_bar,
                         notice,
                         has_config_diagnostic || lifecycle_offset > 0,
                         &self.config.palette,
@@ -524,7 +525,7 @@ impl ClientShellState {
                 } else {
                     notifications::render_mobile_notification_banner(
                         &mut composed,
-                        Rect::new(0, 0, cols, rows),
+                        above_key_bar,
                         notification,
                         has_config_diagnostic || lifecycle_offset > 0,
                         &self.config.palette,
@@ -541,7 +542,7 @@ impl ClientShellState {
             let feedback_area = if layout.mobile_header.is_empty() {
                 layout.pane_surface
             } else {
-                Rect::new(0, 0, cols, rows)
+                above_key_bar
             };
             let offset = crate::ui::copy_feedback_offset_for_toast(
                 feedback_area,

@@ -57,16 +57,21 @@ fn navigate_update_status_uses_released_desktop_and_mobile_placement() {
 }
 
 #[test]
-fn mobile_layout_reserves_only_client_header() {
+fn mobile_layout_reserves_header_and_key_bar() {
     let config = ClientShellConfig::from_config(&Config::default());
     let state = ClientShellState::new(config);
     let layout = state.layout(44, 20);
     assert_eq!(layout.mobile_header, Rect::new(0, 0, 44, 2));
-    assert_eq!(layout.pane_surface, Rect::new(0, 2, 44, 18));
+    assert_eq!(layout.mobile_key_bar, Rect::new(0, 19, 44, 1));
+    assert_eq!(layout.pane_surface, Rect::new(0, 2, 44, 17));
     assert_eq!(
         state.surface_size(44, 20),
-        ClientSurfaceSize { cols: 44, rows: 18 }
+        ClientSurfaceSize { cols: 44, rows: 17 }
     );
+    // A terminal shortened by the phone keyboard gives the row back to the pane.
+    let short = state.layout(44, 9);
+    assert!(short.mobile_key_bar.is_empty());
+    assert_eq!(short.pane_surface, Rect::new(0, 2, 44, 7));
 }
 
 #[test]

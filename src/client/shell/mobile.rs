@@ -12,6 +12,18 @@ use super::*;
 const MOBILE_BUTTON_WIDTH: u16 = 10;
 const MOBILE_KEYS_BUTTON_WIDTH: u16 = 6;
 
+use crossterm::event::{KeyCode, KeyModifiers};
+
+/// Keys an agent prompt needs that phone keyboards lack or bury.
+pub(super) const MOBILE_BAR_KEYS: [(&str, KeyCode, KeyModifiers); 6] = [
+    ("esc", KeyCode::Esc, KeyModifiers::NONE),
+    ("⇧tab", KeyCode::BackTab, KeyModifiers::SHIFT),
+    ("↑", KeyCode::Up, KeyModifiers::NONE),
+    ("↓", KeyCode::Down, KeyModifiers::NONE),
+    ("enter", KeyCode::Enter, KeyModifiers::NONE),
+    ("^c", KeyCode::Char('c'), KeyModifiers::CONTROL),
+];
+
 struct MobileItem {
     lines: Vec<Line<'static>>,
     background: Color,
@@ -85,6 +97,17 @@ pub(super) fn render_mobile_header(
     let status_width = keys.x.saturating_sub(area.x).saturating_sub(1);
     let status = Rect::new(area.x, area.y, status_width, area.height);
     render_header_status(buffer, status, snapshot, config);
+    // The agent counts open the blocked agent, so a push leads there in one tap.
+    hits.mobile_blocked = if status.height > 1
+        && snapshot
+            .agents
+            .iter()
+            .any(|agent| agent.agent_status == crate::api::schema::AgentStatus::Blocked)
+    {
+        Rect::new(status.x, status.y + 1, status.width, 1)
+    } else {
+        Rect::default()
+    };
     render_header_button(buffer, button, snapshot, config);
 }
 
@@ -214,6 +237,52 @@ fn render_header_button(
             ),
             Style::default().fg(palette.red).bg(palette.surface0),
         );
+    }
+}
+
+/// Draws [`MOBILE_BAR_KEYS`] as equal cells; the last takes the remainder.
+pub(super) fn render_key_bar(
+    buffer: &mut Buffer,
+    area: Rect,
+    config: &ClientShellConfig,
+    hits: &mut ShellHitMap,
+) {
+    if area.is_empty() {
+        return;
+    }
+    let style = Style::default().bg(config.palette.surface0);
+    buffer.set_style(area, style);
+    let count = MOBILE_BAR_KEYS.len() as u16;
+    let width = area.width / count;
+    for (index, (label, _, _)) in MOBILE_BAR_KEYS.iter().enumerate() {
+        let x = area.x + width * index as u16;
+        let cell_width = if index + 1 == MOBILE_BAR_KEYS.len() {
+            area.right() - x
+        } else {
+            width
+        };
+        let cell = Rect::new(x, area.y, cell_width, 1);
+        if index > 0 {
+            put_text(
+                buffer,
+                x,
+                area.y,
+                1,
+                "│",
+                style.fg(config.palette.surface_dim),
+            );
+        }
+        // Every cell centers its label after a leading divider column.
+        let label_width = display_width(label);
+        put_text(
+            buffer,
+            x + 1 + cell_width.saturating_sub(1 + label_width) / 2,
+            area.y,
+            cell_width.saturating_sub(1).min(label_width),
+            label,
+            style.fg(config.palette.text).add_modifier(Modifier::BOLD),
+        );
+        hits.mobile_key_bar.push((cell, index));
     }
 }
 
@@ -414,6 +483,8 @@ pub(super) fn render_mobile_switcher(
     Clear.render(area, buffer);
     buffer.set_style(area, Style::default().bg(palette.panel_bg));
     hits.mobile_switch = Rect::default();
+    hits.mobile_key_bar.clear();
+    hits.mobile_blocked = Rect::default();
     if area.height <= 2 {
         *scroll = 0;
         put_text(
@@ -1017,7 +1088,44 @@ impl ClientShellState {
                 _ => {}
             }
         }
+        if self.mode != ClientShellMode::Navigate
+            && mouse.kind == MouseEventKind::Down(MouseButton::Left)
+        {
+            // A tap is the key press, so it reaches the pane, a menu, or copy
+            // mode exactly as the typed key would.
+            if let Some(&(_, index)) = self
+                .hits
+                .mobile_key_bar
+                .iter()
+                .find(|(rect, _)| super::contains(*rect, point))
+            {
+                let (_, code, modifiers) = MOBILE_BAR_KEYS[index];
+                let key = crate::input::TerminalKey::new(code, modifiers);
+                self.handle_key(key.clone(), outcome);
+                self.handle_key(
+                    key.with_kind(crossterm::event::KeyEventKind::Release),
+                    outcome,
+                );
+                outcome.repaint = true;
+                return true;
+            }
+        }
         if self.mode != ClientShellMode::Navigate {
+            if matches!(
+                self.mode,
+                ClientShellMode::Terminal | ClientShellMode::Resize
+            ) && mouse.kind == MouseEventKind::Down(MouseButton::Left)
+                && super::contains(self.hits.mobile_blocked, point)
+            {
+                self.record_binding(
+                    crate::input::KeybindMatch::Action(
+                        crate::input::KeybindAction::NextBlockedAgent,
+                    ),
+                    outcome,
+                );
+                outcome.repaint = true;
+                return true;
+            }
             if matches!(
                 self.mode,
                 ClientShellMode::Terminal | ClientShellMode::Resize
