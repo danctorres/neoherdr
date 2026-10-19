@@ -61,6 +61,8 @@ pub(super) struct ClientShellLayout {
     pub sidebar: Rect,
     pub tab_bar: Rect,
     pub mobile_header: Rect,
+    /// Phone width only: a row of keys phone keyboards lack, under the panes.
+    pub mobile_key_bar: Rect,
     pub pane_surface: Rect,
 }
 
@@ -112,6 +114,10 @@ pub(super) struct ShellHitMap {
     pub(super) tab_scroll_right: Rect,
     pub(super) mobile_switch: Rect,
     pub(super) mobile_keys: Rect,
+    /// Key bar cells, each with its index into `mobile::MOBILE_BAR_KEYS`.
+    pub(super) mobile_key_bar: Vec<(Rect, usize)>,
+    /// The header's agent-count row while an agent is blocked.
+    pub(super) mobile_blocked: Rect,
     /// Tappable which-key rows, each with its index into the hint bindings;
     /// the `more` row uses the binding count.
     pub(super) key_hint_rows: Vec<(Rect, usize)>,

@@ -33,6 +33,7 @@ group agent "agent" opener=["prefix+a"] user=false
   a ["a"] Builtin(OpenNotificationTarget) "jump to notification"
   j ["j"] Builtin(NextAgent) "next agent"
   k ["k"] Builtin(PreviousAgent) "previous agent"
+  b ["b"] Builtin(NextBlockedAgent) "next blocked agent"
 group git "git" opener=["prefix+g"] user=false
   n ["n"] Builtin(NewWorktree) "new worktree"
   o ["o"] Builtin(OpenWorktree) "open worktree"
@@ -135,6 +136,7 @@ help agent menu (prefix+a)
   a jump to notification
   j next agent
   k previous agent
+  b next blocked agent
 help git menu (prefix+g)
   n new worktree
   o open worktree

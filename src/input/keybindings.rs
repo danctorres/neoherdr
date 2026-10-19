@@ -103,6 +103,8 @@ pub(crate) enum KeybindAction {
     NextWorkspace,
     PreviousAgent,
     NextAgent,
+    /// Agent-menu member only, so it has no flat `keys.*` field.
+    NextBlockedAgent,
     /// Agent-menu member only: agents are listed in a picker, so there is no
     /// flat `keys.*` override to configure.
     NewAgentTab,
@@ -271,6 +273,7 @@ const FLAT_ACTIONS: &[FlatAction] = &[
 /// so there is no flat `keys.*` field to configure.
 const MENU_ONLY_ACTIONS: &[(&str, KeybindAction)] = &[
     ("new_agent_tab", KeybindAction::NewAgentTab),
+    ("next_blocked_agent", KeybindAction::NextBlockedAgent),
     ("quit", KeybindAction::Quit),
     ("quit_forget_agents", KeybindAction::QuitForgetAgents),
 ];
@@ -339,6 +342,7 @@ impl KeybindAction {
             Self::NextWorkspace => "next workspace",
             Self::PreviousAgent => "previous agent",
             Self::NextAgent => "next agent",
+            Self::NextBlockedAgent => "next blocked agent",
             Self::NewAgentTab => "new agent tab",
             Self::Quit => "quit: stop server and agents",
             Self::QuitForgetAgents => "quit and forget agents",

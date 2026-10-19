@@ -812,6 +812,118 @@ fn mobile_keys_button_is_hidden_without_which_key() {
     assert!(state.hits.mobile_keys.is_empty());
 }
 
+fn pane_key_codes(
+    outcome: &ClientShellInput,
+) -> Vec<(
+    crate::protocol::ClientKeyCode,
+    crate::protocol::ClientKeyKind,
+)> {
+    outcome
+        .requests
+        .iter()
+        .filter_map(|request| match request {
+            ClientMessage::ClientShellPaneInput { events, .. } => Some(events),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|event| match event {
+            ClientPaneInputEvent::Key { code, kind, .. } => Some((code.clone(), *kind)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn mobile_key_bar_taps_are_key_presses() {
+    use crate::protocol::{ClientKeyCode as Code, ClientKeyKind as Kind};
+    let mut state = state_with_which_key(true);
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    let frame = state.compose(44, 30).expect("mobile layout");
+    let bottom = frame_text(&frame)
+        .lines()
+        .last()
+        .unwrap_or_default()
+        .to_owned();
+    for label in ["esc", "⇧tab", "↑", "↓", "enter", "^c"] {
+        assert!(bottom.contains(label), "{label} missing from {bottom:?}");
+    }
+    let cell = |state: &ClientShellState, index: usize| {
+        state
+            .hits
+            .mobile_key_bar
+            .iter()
+            .find(|(_, candidate)| *candidate == index)
+            .expect("key bar cell")
+            .0
+    };
+
+    let shift_tab_cell = cell(&state, 1);
+    let shift_tab = tap(&mut state, shift_tab_cell);
+    assert_eq!(
+        pane_key_codes(&shift_tab),
+        [(Code::BackTab, Kind::Press), (Code::BackTab, Kind::Release)]
+    );
+
+    // In a menu the tap is the menu's key: esc closes it instead of reaching the pane.
+    press(&mut state, prefix_key());
+    state.compose(44, 30).expect("prefix menu");
+    let esc_cell = cell(&state, 0);
+    let esc = tap(&mut state, esc_cell);
+    assert!(pane_key_codes(&esc).is_empty());
+    assert_eq!(state.mode, ClientShellMode::Terminal);
+}
+
+#[test]
+fn next_blocked_agent_runs_from_the_agent_menu_and_the_mobile_header() {
+    let agent = |pane_id: &str, status, focused| ClientShellAgent {
+        pane_id: pane_id.into(),
+        workspace_id: "ws_1".into(),
+        tab_id: "tab_1".into(),
+        name: Some("pi".into()),
+        display_agent: Some("pi".into()),
+        agent: Some("pi".into()),
+        title: None,
+        terminal_title: None,
+        terminal_title_stripped: None,
+        agent_status: status,
+        state_change_seq: 1,
+        state_labels: Vec::new(),
+        tokens: Vec::new(),
+        focused,
+    };
+    let focuses_pane_2 = |outcome: &ClientShellInput| {
+        outcome.actions.iter().any(|action| {
+            matches!(
+                action,
+                ClientShellAction::Endpoint { request, .. }
+                    if matches!(
+                        &request.method,
+                        crate::api::schema::Method::PaneFocus(params) if params.pane_id == "pane_2"
+                    )
+            )
+        })
+    };
+    let mut state = state_with_which_key(true);
+    let mut projected = snapshot();
+    projected.agents = vec![
+        agent("pane_1", AgentStatus::Idle, true),
+        agent("pane_2", AgentStatus::Blocked, false),
+    ];
+    state.set_snapshot(Box::new(projected));
+    state.set_pane_surface(surface());
+
+    press(&mut state, prefix_key());
+    press(&mut state, plain_key(crossterm::event::KeyCode::Char('a')));
+    let pressed = press(&mut state, plain_key(crossterm::event::KeyCode::Char('b')));
+    assert!(focuses_pane_2(&pressed));
+
+    state.compose(44, 30).expect("mobile header");
+    let blocked = state.hits.mobile_blocked;
+    assert!(!blocked.is_empty());
+    assert!(focuses_pane_2(&tap(&mut state, blocked)));
+}
+
 /// A tap presses the row's key label, so every label naming one key must
 /// parse back to a key its menu resolves.
 #[test]

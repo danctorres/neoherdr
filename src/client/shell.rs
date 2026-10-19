@@ -4,6 +4,7 @@ mod actions;
 mod agent_sidebar;
 mod agent_tab;
 mod aggregate_navigation;
+mod blocked_agents;
 mod machine_diagnostics;
 mod workspace_navigation;
 use workspace_navigation::{PendingWorkspaceHighlight, WorkspaceNavigationTarget};

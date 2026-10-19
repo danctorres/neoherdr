@@ -94,6 +94,7 @@ pub(super) struct MenuEntry {
 ///   ([`crate::input::KeybindAction::repeats_in_menu`])
 /// - shift undoes the lowercase verb where there is no motion: `R` removes
 ///   a name that `r` set
+/// - a status filter uses the Goto picker's filter key: `b` blocked
 /// - the rest follow common convention: `c` clear, `e` editor, `,`
 ///   settings, `?` help, `q` detach
 /// - in the system menu `x` closes the server itself, and shift marks the
@@ -143,6 +144,7 @@ command = [
   { group = "agent", key = "a", action = "open_notification_target" },
   { group = "agent", key = "j", action = "next_agent" },
   { group = "agent", key = "k", action = "previous_agent" },
+  { group = "agent", key = "b", action = "next_blocked_agent" },
 
   { type = "group", group = "git", description = "git" },
   { group = "git", key = "n", action = "new_worktree" },

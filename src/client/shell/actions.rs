@@ -96,6 +96,10 @@ impl ClientShellState {
                     self.focus_visible_notification(outcome);
                     return;
                 }
+                if action == crate::input::KeybindAction::NextBlockedAgent {
+                    self.focus_next_blocked_agent(outcome);
+                    return;
+                }
                 if action == crate::input::KeybindAction::ReloadConfig {
                     self.push_endpoint_method_with_kind(
                         crate::api::schema::Method::ServerReloadConfig(

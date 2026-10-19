@@ -402,7 +402,7 @@ description = "test"
 
 Pressing `prefix+m` opens the menu; pressing `b` or `t` runs the matching member. Which-key lists each menu at the top level as `+` and its description, such as `+workspace`, `+tab`, or `+scripts`. `esc` backs out to the top-level prefix menu. Menus are one level deep: a member entry cannot itself be a group opener. A member key that duplicates another user key in the same menu, or a `group` id with no matching menu, is rejected with a config diagnostic and the offending binding is disabled.
 
-A member can also run a built-in action instead of a command: set `action` to the action's `keys.<action>` field name and leave out `command` and `type`. Three actions have no `keys.*` field: the agent picker is `new_agent_tab`, and stopping the server is `quit` or `quit_forget_agents`. The built-in menus are defined the same way, so any of them can be rebuilt or rearranged in your own config:
+A member can also run a built-in action instead of a command: set `action` to the action's `keys.<action>` field name and leave out `command` and `type`. Four actions have no `keys.*` field: the agent picker is `new_agent_tab`, the blocked-agent jump is `next_blocked_agent`, and stopping the server is `quit` or `quit_forget_agents`. The built-in menus are defined the same way, so any of them can be rebuilt or rearranged in your own config:
 
 ```toml
 [[keys.command]]

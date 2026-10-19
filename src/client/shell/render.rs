@@ -284,6 +284,7 @@ pub(super) fn render_shell(
             config,
             &mut hits,
         );
+        super::mobile::render_key_bar(buffer, layout.mobile_key_bar, config, &mut hits);
     }
     if layout.sidebar.width > 0 {
         if state.endpoints.len() > 1 {

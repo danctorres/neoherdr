@@ -461,11 +461,19 @@ impl ClientShellConfig {
     ) -> ClientShellLayout {
         if cols <= self.mobile_width_threshold {
             let header_height = rows.min(2);
+            // A terminal shortened by the phone keyboard keeps its rows for the pane.
+            let key_bar_height = u16::from(rows >= 10);
             return ClientShellLayout {
                 sidebar: Rect::default(),
                 tab_bar: Rect::default(),
                 mobile_header: Rect::new(0, 0, cols, header_height),
-                pane_surface: Rect::new(0, header_height, cols, rows.saturating_sub(header_height)),
+                mobile_key_bar: Rect::new(0, rows - key_bar_height, cols, key_bar_height),
+                pane_surface: Rect::new(
+                    0,
+                    header_height,
+                    cols,
+                    rows.saturating_sub(header_height + key_bar_height),
+                ),
             };
         }
 
@@ -511,6 +519,7 @@ impl ClientShellConfig {
             sidebar: Rect::new(0, 0, sidebar_width, rows),
             tab_bar,
             mobile_header: Rect::default(),
+            mobile_key_bar: Rect::default(),
             pane_surface,
         }
     }
