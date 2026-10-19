@@ -72,6 +72,13 @@ fn mobile_layout_reserves_header_and_key_bar() {
     let short = state.layout(44, 9);
     assert!(short.mobile_key_bar.is_empty());
     assert_eq!(short.pane_surface, Rect::new(0, 2, 44, 7));
+    // Too narrow for every label, the bar gives its row back too.
+    assert!(state.layout(30, 20).mobile_key_bar.is_empty());
+    // Without mouse capture no tap reaches the bar.
+    let mut config = Config::default();
+    config.ui.mouse_capture = false;
+    let state = ClientShellState::new(ClientShellConfig::from_config(&config));
+    assert!(state.layout(44, 20).mobile_key_bar.is_empty());
 }
 
 #[test]

@@ -323,6 +323,7 @@ impl KeybindAction {
                 | Self::MoveTabNext
                 | Self::PreviousAgent
                 | Self::NextAgent
+                | Self::NextBlockedAgent
         )
     }
 

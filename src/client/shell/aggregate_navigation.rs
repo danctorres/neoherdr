@@ -51,6 +51,20 @@ pub(super) struct AggregateAgentRow<'a> {
 pub(super) struct AggregateAgentTarget {
     pub(super) endpoint_id: ClientEndpointId,
     pub(super) pane_id: String,
+    pub(super) blocked: bool,
+}
+
+/// The first index after `current` that `matches`, wrapping, with `current`
+/// itself checked last. Without a current entry the walk starts at 0.
+pub(super) fn next_matching_index(
+    len: usize,
+    current: Option<usize>,
+    matches: impl Fn(usize) -> bool,
+) -> Option<usize> {
+    let start = current.map_or(0, |index| index + 1);
+    (0..len)
+        .map(|offset| (start + offset) % len)
+        .find(|&index| matches(index))
 }
 
 pub(super) fn aggregate_agent_rows<'a>(
@@ -271,6 +285,7 @@ pub(super) fn online_agent_targets(
         .map(|row| AggregateAgentTarget {
             endpoint_id: row.endpoint.endpoint_id.clone(),
             pane_id: row.agent.pane_id.clone(),
+            blocked: row.agent.agent_status == crate::api::schema::AgentStatus::Blocked,
         })
         .collect()
 }

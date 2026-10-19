@@ -168,64 +168,87 @@ impl ClientShellState {
         }
         if matches!(
             action,
-            KeybindAction::PreviousAgent | KeybindAction::NextAgent | KeybindAction::FocusAgent(_)
+            KeybindAction::PreviousAgent
+                | KeybindAction::NextAgent
+                | KeybindAction::NextBlockedAgent
+                | KeybindAction::FocusAgent(_)
         ) {
-            let agents = super::aggregate_navigation::online_agent_targets(
-                &self.endpoints,
-                &self.active_endpoint_id,
-                self.config.agent_panel_sort,
-            );
-            if agents.is_empty() {
-                return true;
-            }
-            let next = match action {
-                KeybindAction::FocusAgent(index) => {
-                    if index >= agents.len() {
-                        return true;
-                    }
-                    index
-                }
-                KeybindAction::PreviousAgent | KeybindAction::NextAgent => {
-                    let focused = self
-                        .snapshot
-                        .as_deref()
-                        .and_then(|snapshot| snapshot.focused_pane_id.as_deref());
-                    let current = agents.iter().position(|target| {
-                        target.endpoint_id == self.active_endpoint_id
-                            && Some(target.pane_id.as_str()) == focused
-                    });
-                    match (current, action) {
-                        (Some(index), KeybindAction::PreviousAgent) => {
-                            (index + agents.len() - 1) % agents.len()
-                        }
-                        (Some(index), KeybindAction::NextAgent) => (index + 1) % agents.len(),
-                        (None, KeybindAction::PreviousAgent) => agents.len() - 1,
-                        _ => 0,
-                    }
-                }
-                _ => unreachable!("endpoint agent navigation"),
-            };
-            let target = &agents[next];
-            if self.focus_or_activate(
-                target.endpoint_id.clone(),
-                ClientEndpointFocusTarget::Pane(target.pane_id.clone()),
-                outcome,
-            ) {
-                if target.endpoint_id == self.active_endpoint_id {
-                    self.reveal_endpoint_agent(
-                        &target.endpoint_id,
-                        &target.pane_id,
-                        self.hits.agent_body.height,
-                    );
-                } else {
-                    self.pending_agent_reveal =
-                        Some((target.endpoint_id.clone(), target.pane_id.clone()));
-                }
-                outcome.repaint = true;
+            if let Some(target) = self.endpoint_agent_target(action, false) {
+                self.focus_endpoint_agent(target, outcome);
             }
             return true;
         }
         false
+    }
+
+    /// The agent an agent-list action reaches across online machines, in
+    /// agent-list order. `active_only` keeps to the active machine's agents.
+    pub(super) fn endpoint_agent_target(
+        &self,
+        action: crate::input::KeybindAction,
+        active_only: bool,
+    ) -> Option<super::aggregate_navigation::AggregateAgentTarget> {
+        use crate::input::KeybindAction;
+        let mut agents = super::aggregate_navigation::online_agent_targets(
+            &self.endpoints,
+            &self.active_endpoint_id,
+            self.config.agent_panel_sort,
+        );
+        if active_only {
+            agents.retain(|target| target.endpoint_id == self.active_endpoint_id);
+        }
+        if agents.is_empty() {
+            return None;
+        }
+        let focused = self
+            .snapshot
+            .as_deref()
+            .and_then(|snapshot| snapshot.focused_pane_id.as_deref());
+        let current = agents.iter().position(|target| {
+            target.endpoint_id == self.active_endpoint_id
+                && Some(target.pane_id.as_str()) == focused
+        });
+        let next = match (current, action) {
+            (_, KeybindAction::FocusAgent(index)) => (index < agents.len()).then_some(index)?,
+            (Some(index), KeybindAction::PreviousAgent) => {
+                (index + agents.len() - 1) % agents.len()
+            }
+            (None, KeybindAction::PreviousAgent) => agents.len() - 1,
+            (_, KeybindAction::NextAgent) => {
+                super::aggregate_navigation::next_matching_index(agents.len(), current, |_| true)?
+            }
+            (_, KeybindAction::NextBlockedAgent) => {
+                super::aggregate_navigation::next_matching_index(agents.len(), current, |index| {
+                    agents[index].blocked
+                })?
+            }
+            _ => return None,
+        };
+        Some(agents.swap_remove(next))
+    }
+
+    /// Focuses an agent on any machine and scrolls the agent list to it.
+    pub(super) fn focus_endpoint_agent(
+        &mut self,
+        target: super::aggregate_navigation::AggregateAgentTarget,
+        outcome: &mut ClientShellInput,
+    ) {
+        if self.focus_or_activate(
+            target.endpoint_id.clone(),
+            ClientEndpointFocusTarget::Pane(target.pane_id.clone()),
+            outcome,
+        ) {
+            if target.endpoint_id == self.active_endpoint_id {
+                self.reveal_endpoint_agent(
+                    &target.endpoint_id,
+                    &target.pane_id,
+                    self.hits.agent_body.height,
+                );
+            } else {
+                self.pending_agent_reveal = Some((target.endpoint_id, target.pane_id));
+            }
+            outcome.repaint = true;
+        }
     }
 
     /// Selecting a machine that is waiting to reconnect asks for an attempt now.
