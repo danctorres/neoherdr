@@ -19,6 +19,14 @@ group tab "tab" opener=["prefix+t", "prefix+shift+t"] user=true
 group pane "pane" opener=["prefix+p"] user=false
   \ ["\\"] Builtin(SplitVertical) "split side by side"
   - ["-"] Builtin(SplitHorizontal) "split stacked"
+  h ["h"] Builtin(FocusPaneLeft) "focus pane left"
+  j ["j"] Builtin(FocusPaneDown) "focus pane down"
+  k ["k"] Builtin(FocusPaneUp) "focus pane up"
+  l ["l"] Builtin(FocusPaneRight) "focus pane right"
+  shift+h ["shift+h"] Builtin(SwapPaneLeft) "swap pane left"
+  shift+j ["shift+j"] Builtin(SwapPaneDown) "swap pane down"
+  shift+k ["shift+k"] Builtin(SwapPaneUp) "swap pane up"
+  shift+l ["shift+l"] Builtin(SwapPaneRight) "swap pane right"
   x ["x"] Builtin(ClosePane) "close pane"
   z ["z"] Builtin(Zoom) "zoom pane"
   ; [";"] Builtin(LastPane) "last pane"
@@ -134,6 +142,14 @@ help tab menu (prefix+t / prefix+shift+t)
 help pane menu (prefix+p)
   \ split side by side
   - split stacked
+  h focus pane left
+  j focus pane down
+  k focus pane up
+  l focus pane right
+  shift+h swap pane left
+  shift+j swap pane down
+  shift+k swap pane up
+  shift+l swap pane right
   x close pane
   z zoom pane
   ; last pane

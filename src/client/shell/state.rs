@@ -1315,15 +1315,17 @@ impl ClientShellState {
             return;
         }
         let walking = self.key_group_walking;
-        let entries = crate::input::group_entries_where(
-            &self.config.keybinds.keybinds,
-            group,
-            |action| {
+        let keybinds = &self.config.keybinds.keybinds;
+        let entries = if walking {
+            crate::input::group_entries_where(keybinds, group, |action| {
                 self.key_group_action_available(action)
-                    && (!walking
-                        || matches!(action, crate::config::KeyGroupAction::Builtin(action) if action.repeats_in_menu()))
-            },
-        );
+                    && matches!(action, crate::config::KeyGroupAction::Builtin(action) if action.repeats_in_menu())
+            })
+        } else {
+            crate::input::group_menu_entries(keybinds, group, |action| {
+                self.key_group_action_available(action)
+            })
+        };
         let title = self
             .config
             .keybinds

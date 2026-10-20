@@ -1097,3 +1097,82 @@ fn walk_keys_keep_their_menu_open_until_another_key() {
     press(&mut state, key('r'));
     assert!(matches!(state.overlay, Some(ClientShellOverlay::Rename(_))));
 }
+
+#[test]
+fn pane_menu_walks_focus_and_swaps_in_all_four_directions() {
+    use crate::api::schema::{Method, PaneDirection};
+    let mut state = state_with_which_key(true);
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+    let key = |ch| plain_key(crossterm::event::KeyCode::Char(ch));
+
+    press(&mut state, prefix_key());
+    press(&mut state, key('p'));
+    for (ch, swap, direction) in [
+        ('h', false, PaneDirection::Left),
+        ('j', false, PaneDirection::Down),
+        ('k', false, PaneDirection::Up),
+        ('l', false, PaneDirection::Right),
+        ('H', true, PaneDirection::Left),
+        ('J', true, PaneDirection::Down),
+        ('K', true, PaneDirection::Up),
+        ('L', true, PaneDirection::Right),
+    ] {
+        let outcome = press(&mut state, key(ch));
+        let methods: Vec<_> = outcome
+            .actions
+            .iter()
+            .filter_map(|action| match action {
+                ClientShellAction::Endpoint { request, .. } => Some(&request.method),
+                _ => None,
+            })
+            .collect();
+        let sent = match methods.as_slice() {
+            [Method::PaneFocusDirection(params)] if !swap => params.direction,
+            [Method::PaneSwap(params)] if swap => params.direction.expect("swap direction"),
+            other => panic!("{ch}: {other:?}"),
+        };
+        assert_eq!(sent, direction, "{ch}");
+        assert_eq!(state.mode, ClientShellMode::Prefix);
+        assert_eq!(state.active_key_group.as_deref(), Some("pane"));
+    }
+    let hint = state.key_hint.clone().expect("walk hint");
+    let keys: Vec<_> = hint.bindings.iter().map(|(key, _)| key.as_str()).collect();
+    assert_eq!(
+        keys,
+        ["h", "j", "k", "l", "shift+h", "shift+j", "shift+k", "shift+l"]
+    );
+}
+
+#[test]
+fn pane_menu_joins_direction_rows_and_a_tap_opens_the_walk() {
+    let mut state = state_with_which_key(true);
+    state.set_snapshot(Box::new(snapshot()));
+    state.set_pane_surface(surface());
+
+    press(&mut state, prefix_key());
+    press(&mut state, plain_key(crossterm::event::KeyCode::Char('p')));
+    let hint = state.key_hint.clone().expect("pane menu");
+    let keys: Vec<_> = hint.bindings.iter().map(|(key, _)| key.as_str()).collect();
+    assert!(
+        keys.contains(&"h/j/k/l") && keys.contains(&"shift+h/j/k/l"),
+        "{keys:?}"
+    );
+    assert!(!keys.contains(&"h"), "{keys:?}");
+
+    state.compose(44, 18).expect("pane menu frame");
+    let swap = hint_row(&state, "shift+h/j/k/l");
+    let outcome = tap(&mut state, swap);
+    assert!(outcome.actions.is_empty(), "{:?}", outcome.actions);
+    assert!(state.key_group_walking);
+    assert_eq!(state.mode, ClientShellMode::Prefix);
+    state.compose(44, 18).expect("walk frame");
+    let move_right = hint_row(&state, "shift+l");
+    let outcome = tap(&mut state, move_right);
+    assert!(outcome.actions.iter().any(|action| matches!(
+        action,
+        ClientShellAction::Endpoint { request, .. }
+            if matches!(request.method, crate::api::schema::Method::PaneSwap(_))
+    )));
+    assert!(state.key_group_walking);
+}

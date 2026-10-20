@@ -84,14 +84,18 @@ pub(super) struct MenuEntry {
 /// - one verb vocabulary: `n` new, `r` rename, `x` close/remove, `s`
 ///   switch/pick
 /// - an entry that also has a top-level key uses that same key (`x`, `z`,
-///   `\`, `-`, `;`, `y`), so learning one level teaches the other
+///   `\`, `-`, `;`, `y`, `h/j/k/l`, `H/J/K/L`), so learning one level
+///   teaches the other
 /// - direction keys walk the item's own axis: `h`/`l` for the horizontal tab
-///   bar, `j`/`k` for the vertical workspace and agent lists
+///   bar, `j`/`k` for the vertical workspace and agent lists, all four for
+///   the two-dimensional pane layout
 /// - shift turns "go to" into "move": `H`/`L` move a tab, `J`/`K` move a
-///   workspace, `:` (shifted `;`) swaps with the last pane
+///   workspace, `HJKL` swap a pane, `:` (shifted `;`) swaps with the last
+///   pane
 /// - a menu's direction keys repeat: after one, the menu stays open with only
 ///   those keys live, and any other key ends the walk
-///   ([`crate::input::KeybindAction::repeats_in_menu`])
+///   ([`crate::input::KeybindAction::repeats_in_menu`]); a four-way set is
+///   one which-key row until then ([`crate::input::group_menu_entries`])
 /// - shift undoes the lowercase verb where there is no motion: `R` removes
 ///   a name that `r` set
 /// - a status filter uses the Goto picker's filter key: `b` blocked
@@ -129,6 +133,14 @@ command = [
   { type = "group", group = "pane", description = "pane" },
   { group = "pane", key = "backslash", action = "split_vertical" },
   { group = "pane", key = "minus", action = "split_horizontal" },
+  { group = "pane", key = "h", action = "focus_pane_left" },
+  { group = "pane", key = "j", action = "focus_pane_down" },
+  { group = "pane", key = "k", action = "focus_pane_up" },
+  { group = "pane", key = "l", action = "focus_pane_right" },
+  { group = "pane", key = "H", action = "swap_pane_left" },
+  { group = "pane", key = "J", action = "swap_pane_down" },
+  { group = "pane", key = "K", action = "swap_pane_up" },
+  { group = "pane", key = "L", action = "swap_pane_right" },
   { group = "pane", key = "x", action = "close_pane" },
   { group = "pane", key = "z", action = "zoom" },
   { group = "pane", key = "semicolon", action = "last_pane" },

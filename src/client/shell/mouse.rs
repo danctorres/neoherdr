@@ -677,8 +677,10 @@ impl ClientShellState {
     }
 
     /// A click on a which-key row presses that row's key, so mouse and touch
-    /// reach every action the keymap does. Range rows such as `1..9` name no
-    /// single key and are swallowed. The `more` row turns the page instead.
+    /// reach every action the keymap does. A menu's joined direction row,
+    /// `h/j/k/l`, opens that menu's walk, which lists each key. Other range
+    /// rows such as `1..9` name no single key and are swallowed. The `more`
+    /// row turns the page instead.
     fn press_key_hint_row(&mut self, point: (u16, u16), outcome: &mut ClientShellInput) -> bool {
         if self.mode != ClientShellMode::Prefix {
             return false;
@@ -700,14 +702,39 @@ impl ClientShellState {
             outcome.repaint = true;
             return true;
         }
-        let combo = self
+        let Some(label) = self
             .key_hint
             .as_ref()
             .and_then(|hint| hint.bindings.get(index))
             .and_then(|(label, _)| label.split(" / ").next())
-            .and_then(crate::config::parse_key_combo);
-        if let Some((code, modifiers)) = combo {
+            .map(str::to_owned)
+        else {
+            return true;
+        };
+        if let Some((code, modifiers)) = crate::config::parse_key_combo(&label) {
             self.route_key_press(&crate::input::TerminalKey::new(code, modifiers), outcome);
+            return true;
+        }
+        let walks = self.active_key_group.clone().filter(|group| {
+            label
+                .split('/')
+                .next()
+                .and_then(crate::config::parse_key_combo)
+                .and_then(|(code, modifiers)| {
+                    crate::input::resolve_group_key(
+                        &self.config.keybinds.keybinds,
+                        group,
+                        &crate::input::TerminalKey::new(code, modifiers),
+                    )
+                })
+                .is_some_and(|binding| {
+                    matches!(binding, crate::input::KeybindMatch::Action(action) if action.repeats_in_menu())
+                })
+        });
+        if let Some(group) = walks {
+            self.key_group_walking = true;
+            self.maybe_show_key_group_hint(&group);
+            outcome.repaint = true;
         }
         true
     }
