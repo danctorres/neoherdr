@@ -35,8 +35,8 @@ The default keys follow five rules, so once you know them you can guess most bin
 1. **The hot path is one key.** Moving focus, opening and switching tabs, splitting, closing, and zooming sit directly after the prefix.
 2. **Menus are nouns.** Everything else lives in a menu named after the object it acts on: workspace, tab, pane, agent, git, system, and custom (your own programs).
 3. **One verb vocabulary.** Inside every menu, `n` is new, `r` rename, `x` close or remove, and `s` switch or pick.
-4. **One key per action.** A menu entry that also has a top-level key uses the same key in the menu: `x` closes, `z` zooms, `\` and `-` split, `;` goes to the last pane, and `y` enters copy mode, whether you press them after the prefix or inside `prefix+p`.
-5. **Keys mirror the screen.** Tabs are a horizontal bar, so they use `h`/`l` (and `[`/`]` at the top level); workspaces and agents are vertical lists, so they use `j`/`k`. Shift turns "go to" into "move": `H`/`L` and `{`/`}` move a tab, `J`/`K` move a workspace, `shift+h/j/k/l` swaps panes, and `:` (shifted `;`) swaps with the last pane. Split keys look like the divider they draw: `\` splits side by side, `-` stacks.
+4. **One key per action.** A menu entry that also has a top-level key uses the same key in the menu: `x` closes, `z` zooms, `\` and `-` split, `;` goes to the last pane, `y` enters copy mode, `h/j/k/l` focuses a pane, and `shift+h/j/k/l` swaps one, whether you press them after the prefix or inside `prefix+p`.
+5. **Keys mirror the screen.** Tabs are a horizontal bar, so they use `h`/`l` (and `[`/`]` at the top level); workspaces and agents are vertical lists, so they use `j`/`k`; panes are laid out in two dimensions, so they use all four. Shift turns "go to" into "move": `H`/`L` and `{`/`}` move a tab, `J`/`K` move a workspace, `shift+h/j/k/l` swaps panes, and `:` (shifted `;`) swaps with the last pane. Split keys look like the divider they draw: `\` splits side by side, `-` stacks.
 
 In the agent menu `b` jumps to the next blocked agent, the same key that filters blocked agents in the Goto picker. The few keys that no rule covers follow common convention: `c` clears, `e` opens your editor, `,` opens settings, `?` shows help, `q` detaches, and `R` undoes the name that `r` set. In the system menu `x` closes the server itself, and `X` is the more final form of the same verb: it also forgets the agents.
 
@@ -69,7 +69,7 @@ Press the prefix, then one key:
 
 Press the menu key after the prefix, then the entry key without the prefix. Esc in a menu returns to the top-level which-key menu.
 
-Direction keys repeat. After a key that walks or moves along a list (`j`/`k` and `J`/`K` for workspaces, `h`/`l` and `H`/`L` for tabs, `j`/`k` for agents) the menu stays open with only those keys listed, so `prefix+a j j j k` steps through agents without pressing the prefix again. Esc or Enter ends the walk. Any other key ends it too and is then handled as usual, so it is typed into the pane rather than run as a menu entry.
+Direction keys repeat. After a key that walks or moves along a list (`j`/`k` and `J`/`K` for workspaces, `h`/`l` and `H`/`L` for tabs, `h/j/k/l` and `H/J/K/L` for panes, `j`/`k` for agents) the menu stays open with only those keys listed, so `prefix+a j j j k` steps through agents and `prefix+p L L` moves a pane two places right without pressing the prefix again. The pane menu shows each direction set as one row, `h/j/k/l focus pane`, until a walk starts. Tapping that row starts the walk without moving, so on a phone you tap `keys`, `p`, the row, then the single direction rows. Esc or Enter ends the walk. Any other key ends it too and is then handled as usual, so it is typed into the pane rather than run as a menu entry.
 
 Workspace, `prefix+w`:
 
@@ -98,6 +98,8 @@ Pane, `prefix+p`:
 | Key | Action |
 | --- | --- |
 | `\` / `-` | Split side by side / stacked |
+| `h` / `j` / `k` / `l` | Focus the pane left / down / up / right |
+| `H` / `J` / `K` / `L` | Swap with the pane left / down / up / right |
 | `x` | Close pane |
 | `z` | Zoom pane |
 | `;` | Last focused pane |

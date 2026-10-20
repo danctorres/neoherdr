@@ -134,6 +134,50 @@ fn join_direction_labels(labels: &[String]) -> String {
     }
 }
 
+/// A menu's which-key entries with each four-way direction set as one row,
+/// `h/j/k/l focus pane`, so a pane menu fits a short screen. Two-way sets stay
+/// one row per key, one tap each. Tapping a joined row opens the menu's walk,
+/// which lists every key.
+pub(crate) fn group_menu_entries(
+    keybinds: &Keybinds,
+    group: &str,
+    keep: impl Fn(&crate::config::KeyGroupAction) -> bool,
+) -> Vec<KeybindHelpEntry> {
+    let members = keybinds
+        .groups
+        .iter()
+        .filter(|candidate| candidate.id == group)
+        .flat_map(|group| group.members.iter())
+        .filter(|member| keep(&member.action))
+        .collect::<Vec<_>>();
+    let four_way = |action: &crate::config::KeyGroupAction| match action {
+        crate::config::KeyGroupAction::Builtin(action) => DIRECTION_SETS
+            .iter()
+            .find(|(set, _)| set.len() == 4 && set.contains(action)),
+        _ => None,
+    };
+    let mut entries = Vec::new();
+    for (index, member) in members.iter().enumerate() {
+        let Some(&(set, description)) = four_way(&member.action) else {
+            entries.push((member.label.clone(), member.description.clone()));
+            continue;
+        };
+        let in_set = |action: &crate::config::KeyGroupAction| {
+            four_way(action).is_some_and(|(other, _)| *other == set)
+        };
+        if members[..index].iter().any(|other| in_set(&other.action)) {
+            continue;
+        }
+        let labels = members
+            .iter()
+            .filter(|other| in_set(&other.action))
+            .map(|other| other.label.clone())
+            .collect::<Vec<_>>();
+        entries.push((join_direction_labels(&labels), Cow::Borrowed(description)));
+    }
+    entries
+}
+
 /// Every built-in top-level binding as `(full label, description)`: menu
 /// openers (described as `+menu`), bound actions, and indexed actions.
 /// Unbound actions are omitted; they live in the menus.

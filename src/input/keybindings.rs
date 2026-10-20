@@ -324,6 +324,14 @@ impl KeybindAction {
                 | Self::PreviousAgent
                 | Self::NextAgent
                 | Self::NextBlockedAgent
+                | Self::FocusPaneLeft
+                | Self::FocusPaneDown
+                | Self::FocusPaneUp
+                | Self::FocusPaneRight
+                | Self::SwapPaneLeft
+                | Self::SwapPaneDown
+                | Self::SwapPaneUp
+                | Self::SwapPaneRight
         )
     }
 

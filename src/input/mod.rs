@@ -6,7 +6,8 @@ pub(crate) mod mouse;
 mod parse;
 
 pub(crate) use keybind_help::{
-    filter_keybind_help_groups, keybind_help_groups, keybind_help_text_char, prefix_menu_entries,
+    filter_keybind_help_groups, group_menu_entries, keybind_help_groups, keybind_help_text_char,
+    prefix_menu_entries,
 };
 #[cfg(test)]
 pub(crate) use keybindings::group_entries;
