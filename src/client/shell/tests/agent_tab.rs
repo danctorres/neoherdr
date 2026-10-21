@@ -98,7 +98,7 @@ fn agent_menu_offers_new_agent_tab_when_the_runtime_advertises_it() {
         .iter()
         .map(|(key, _)| key.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(keys, ["n", "a", "j", "k", "b"]);
+    assert_eq!(keys, ["n", "a", "j", "k", "b", "1..9"]);
     assert!(hint
         .bindings
         .iter()
@@ -120,7 +120,7 @@ fn agent_menu_hides_new_agent_tab_on_runtimes_without_it() {
         .iter()
         .map(|(key, _)| key.clone())
         .collect::<Vec<_>>();
-    assert_eq!(keys, ["a", "j", "k", "b"]);
+    assert_eq!(keys, ["a", "j", "k", "b", "1..9"]);
     let pressed = press_char(&mut state, 'n');
     assert!(pressed.actions.is_empty());
     assert!(state.overlay.is_none());

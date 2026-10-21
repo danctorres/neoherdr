@@ -733,6 +733,18 @@ fn agent_sidebar_honors_priority_symbols_tokens_and_stable_hits() {
             .map(|(_, pane_id)| pane_id.as_str()),
         Some("pane_2")
     );
+    // Each row leads with the number `prefix+a <n>` focuses.
+    let lead = |index: usize| {
+        let rect = state.hits.agents[index].0;
+        (0..2)
+            .map(|dx| {
+                frame.cells[rect.y as usize * frame.width as usize + (rect.x + dx) as usize]
+                    .symbol
+                    .as_str()
+            })
+            .collect::<String>()
+    };
+    assert_eq!([lead(0), lead(1)], ["1 ", "2 "], "frame: {text}");
 
     let first = state.hits.agents[0].0;
     let click = state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
