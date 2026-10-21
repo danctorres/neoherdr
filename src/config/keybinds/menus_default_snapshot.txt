@@ -42,6 +42,15 @@ group agent "agent" opener=["prefix+a"] user=false
   j ["j"] Builtin(NextAgent) "next agent"
   k ["k"] Builtin(PreviousAgent) "previous agent"
   b ["b"] Builtin(NextBlockedAgent) "next blocked agent"
+  1 ["1"] Builtin(FocusAgent(0)) "focus agent"
+  2 ["2"] Builtin(FocusAgent(1)) "focus agent"
+  3 ["3"] Builtin(FocusAgent(2)) "focus agent"
+  4 ["4"] Builtin(FocusAgent(3)) "focus agent"
+  5 ["5"] Builtin(FocusAgent(4)) "focus agent"
+  6 ["6"] Builtin(FocusAgent(5)) "focus agent"
+  7 ["7"] Builtin(FocusAgent(6)) "focus agent"
+  8 ["8"] Builtin(FocusAgent(7)) "focus agent"
+  9 ["9"] Builtin(FocusAgent(8)) "focus agent"
 group git "git" opener=["prefix+g"] user=false
   n ["n"] Builtin(NewWorktree) "new worktree"
   o ["o"] Builtin(OpenWorktree) "open worktree"
@@ -153,6 +162,7 @@ help agent menu (prefix+a)
   j next agent
   k previous agent
   b next blocked agent
+  1..9 focus agent
 help git menu (prefix+g)
   n new worktree
   o open worktree

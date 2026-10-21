@@ -99,13 +99,16 @@ pub(super) struct MenuEntry {
 /// - shift undoes the lowercase verb where there is no motion: `R` removes
 ///   a name that `r` set
 /// - a status filter uses the Goto picker's filter key: `b` blocked
+/// - digits pick an item by its number in the list, as `prefix 1..9` picks a
+///   tab: `1..9` in the agent menu focuses the agent at that row of the agent
+///   list
 /// - the rest follow common convention: `c` clear, `e` editor, `,`
 ///   settings, `?` help, `q` detach
 /// - in the system menu `x` closes the server itself, and shift marks the
 ///   more final form of that verb: `X` also forgets the agents
-/// - agents get no per-agent keys: `n` in the agent menu opens a picker of
-///   the agents installed on the runtime host, so no default key depends on
-///   what is installed
+/// - agent programs get no keys of their own: `n` in the agent menu opens a
+///   picker of the agents installed on the runtime host, so no default key
+///   depends on what is installed
 ///
 /// A member's description defaults to its action's description.
 const DEFAULT_MENUS: &str = r#"
@@ -157,6 +160,7 @@ command = [
   { group = "agent", key = "j", action = "next_agent" },
   { group = "agent", key = "k", action = "previous_agent" },
   { group = "agent", key = "b", action = "next_blocked_agent" },
+  { group = "agent", key = "1..9", action = "focus_agent" },
 
   { type = "group", group = "git", description = "git" },
   { group = "git", key = "n", action = "new_worktree" },
@@ -264,7 +268,7 @@ pub(super) fn parse_member_key(raw: &str) -> Option<KeyCombo> {
 }
 
 /// Direct member keys parsed without the prefix registry: a menu's keys only
-/// have to be unique within the menu.
+/// have to be unique within the menu. `1..9` stands for the nine digit keys.
 pub(super) fn parse_group_member_bindings(
     field: &str,
     config: &BindingConfig,
@@ -274,6 +278,16 @@ pub(super) fn parse_group_member_bindings(
     for raw in config.values() {
         let raw = raw.trim();
         if raw.is_empty() {
+            continue;
+        }
+        if let Some(modifiers) = super::parse_range_modifiers(raw) {
+            bindings.extend(('1'..='9').map(|digit| {
+                let combo = (KeyCode::Char(digit), modifiers);
+                ResolvedBinding {
+                    trigger: BindingTrigger::Direct(combo),
+                    label: format_key_combo(combo),
+                }
+            }));
             continue;
         }
         let Some(combo) = parse_member_key(raw) else {
@@ -976,6 +990,66 @@ command = "echo two"
     fn default_menu_fragment_parses_without_diagnostics() {
         assert!(!default_menu_entries().is_empty());
         assert!(Config::default().collect_diagnostics().is_empty());
+    }
+
+    #[test]
+    fn indexed_menu_entries_run_the_action_for_the_digit_pressed() {
+        let config: Config = toml::from_str(
+            r#"
+[[keys.command]]
+key = "prefix+m"
+type = "group"
+group = "jump"
+description = "jump"
+
+[[keys.command]]
+key = "1..9"
+group = "jump"
+action = "switch_tab"
+
+[[keys.command]]
+key = "3"
+group = "agent"
+action = "next_agent"
+
+[[keys.command]]
+key = "x"
+group = "jump"
+action = "switch_workspace"
+"#,
+        )
+        .unwrap();
+        let diagnostics = config.collect_diagnostics();
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+        assert!(diagnostics[0].contains("indexed keybinding must use 1..9"));
+        let keybinds = config.keybinds();
+        let key = |ch| crate::input::TerminalKey::new(KeyCode::Char(ch), KeyModifiers::empty());
+        assert!(matches!(
+            crate::input::resolve_group_key(&keybinds, "jump", &key('4')),
+            Some(crate::input::KeybindMatch::Action(
+                crate::input::KeybindAction::SwitchTab(3)
+            ))
+        ));
+        assert!(crate::input::resolve_group_key(&keybinds, "jump", &key('x')).is_none());
+        // A user entry on one digit replaces only that digit's built-in entry.
+        assert!(matches!(
+            crate::input::resolve_group_key(&keybinds, "agent", &key('3')),
+            Some(crate::input::KeybindMatch::Action(
+                crate::input::KeybindAction::NextAgent
+            ))
+        ));
+        assert!(matches!(
+            crate::input::resolve_group_key(&keybinds, "agent", &key('4')),
+            Some(crate::input::KeybindMatch::Action(
+                crate::input::KeybindAction::FocusAgent(3)
+            ))
+        ));
+        let agent = crate::input::group_entries(&keybinds, "agent");
+        assert!(agent.iter().any(|(label, _)| label == "1/2/4/5/6/7/8/9"));
+        assert_eq!(
+            crate::input::group_entries(&keybinds, "jump"),
+            [("1..9".to_owned(), "switch tab".into())]
+        );
     }
 
     #[test]

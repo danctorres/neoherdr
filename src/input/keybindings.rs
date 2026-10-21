@@ -69,14 +69,60 @@ pub(crate) fn group_entries_where(
     group: &str,
     keep: impl Fn(&KeyGroupAction) -> bool,
 ) -> Vec<(String, std::borrow::Cow<'static, str>)> {
-    keybinds
+    group_member_rows(keybinds, group, keep)
+        .into_iter()
+        .map(|(label, description, _)| (label, description))
+        .collect()
+}
+
+/// `(key label, description, action)` for every entry of the `group` menu,
+/// with the digit keys of one indexed action joined into one row:
+/// `1..9 focus agent`.
+pub(crate) fn group_member_rows(
+    keybinds: &Keybinds,
+    group: &str,
+    keep: impl Fn(&KeyGroupAction) -> bool,
+) -> Vec<(String, std::borrow::Cow<'static, str>, KeyGroupAction)> {
+    let members = keybinds
         .groups
         .iter()
         .filter(|candidate| candidate.id == group)
         .flat_map(|group| group.members.iter())
         .filter(|member| keep(&member.action))
-        .map(|member| (member.label.clone(), member.description.clone()))
-        .collect()
+        .collect::<Vec<_>>();
+    let indexed = |action: &KeyGroupAction| match action {
+        KeyGroupAction::Builtin(action) => action.with_index(0),
+        _ => None,
+    };
+    let mut rows = Vec::new();
+    for (index, member) in members.iter().enumerate() {
+        let Some(kind) = indexed(&member.action) else {
+            rows.push((
+                member.label.clone(),
+                member.description.clone(),
+                member.action,
+            ));
+            continue;
+        };
+        if members[..index]
+            .iter()
+            .any(|other| indexed(&other.action) == Some(kind))
+        {
+            continue;
+        }
+        let labels = members
+            .iter()
+            .filter(|other| indexed(&other.action) == Some(kind))
+            .map(|other| other.label.as_str())
+            .collect::<Vec<_>>();
+        let label = if labels == ["1", "2", "3", "4", "5", "6", "7", "8", "9"] {
+            "1..9".to_owned()
+        } else {
+            labels.join("/")
+        };
+        rows.push((label, member.description.clone(), member.action));
+    }
+    rows
 }
 
 fn resolve_group_opener(keybinds: &Keybinds, key: &TerminalKey) -> Option<String> {
@@ -278,6 +324,14 @@ const MENU_ONLY_ACTIONS: &[(&str, KeybindAction)] = &[
     ("quit_forget_agents", KeybindAction::QuitForgetAgents),
 ];
 
+/// Indexed actions, named as their `keys.<name>` field. A menu entry for one
+/// is bound to digits and runs the action for the digit pressed.
+const INDEXED_ACTIONS: &[(&str, KeybindAction)] = &[
+    ("switch_tab", KeybindAction::SwitchTab(0)),
+    ("switch_workspace", KeybindAction::SwitchWorkspace(0)),
+    ("focus_agent", KeybindAction::FocusAgent(0)),
+];
+
 /// Every non-indexed action with its own `keys.<action>` binding, in help
 /// order. Shared by key resolution and the help projections.
 pub(crate) fn flat_action_bindings(
@@ -295,8 +349,20 @@ impl KeybindAction {
             .iter()
             .map(|flat| (flat.name, flat.action))
             .chain(MENU_ONLY_ACTIONS.iter().copied())
+            .chain(INDEXED_ACTIONS.iter().copied())
             .find(|(candidate, _)| *candidate == name)
             .map(|(_, action)| action)
+    }
+
+    /// The same indexed action for item `index` (0-based), or `None` when the
+    /// action takes no index.
+    pub(crate) fn with_index(self, index: usize) -> Option<Self> {
+        match self {
+            Self::SwitchTab(_) => Some(Self::SwitchTab(index)),
+            Self::SwitchWorkspace(_) => Some(Self::SwitchWorkspace(index)),
+            Self::FocusAgent(_) => Some(Self::FocusAgent(index)),
+            _ => None,
+        }
     }
 
     /// `(has a default binding, action)` for every flat action.

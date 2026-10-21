@@ -423,7 +423,7 @@ action = "split_horizontal"
 description = "stack"
 ```
 
-An `action` entry must set `group`; for a top-level key, set the `keys.<action>` field instead. Its description defaults to the action's own label. An entry that sets `action` together with `command` or `type`, or names an unknown action, is rejected with a config diagnostic.
+An `action` entry must set `group`; for a top-level key, set the `keys.<action>` field instead. Its description defaults to the action's own label. The numbered actions `switch_tab`, `switch_workspace`, and `focus_agent` take digit keys: `key = "1..9"` binds all nine, and a single digit such as `key = "3"` binds the third item. The agent menu's `1..9` is defined this way, so a member on one of its digits replaces only that digit. An entry that sets `action` together with `command` or `type`, or names an unknown action, is rejected with a config diagnostic.
 
 Custom commands receive `HERDR_SOCKET_PATH`, `HERDR_BIN_PATH`, `HERDR_ACTIVE_WORKSPACE_ID`, `HERDR_ACTIVE_TAB_ID`, `HERDR_ACTIVE_PANE_ID`, and `HERDR_ACTIVE_PANE_CWD` when those values are available. Shell commands run from the focused pane's working directory when Herdr can detect it.
 

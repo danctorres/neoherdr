@@ -15,6 +15,9 @@ pub(super) struct AgentRow {
     pub(super) status: crate::api::schema::AgentStatus,
     pub(super) focused: bool,
     pub(super) rows: Vec<Vec<crate::ui::ResolvedToken>>,
+    /// The row's 1-based place in the order `focus_agent` counts, so
+    /// `prefix+a 3` reaches the row numbered 3. `None` for a row it skips.
+    pub(super) number: Option<usize>,
 }
 
 pub(super) fn agent_is_blocked(snapshot: &ClientShellSnapshot, pane_id: &str) -> bool {
@@ -247,7 +250,12 @@ pub(super) fn agent_rows(
 ) -> Vec<AgentRow> {
     ordered_agent_pane_ids(snapshot, config.agent_panel_sort)
         .into_iter()
-        .filter_map(|pane_id| agent_row(snapshot, &pane_id, config, machine))
+        .enumerate()
+        .filter_map(|(index, pane_id)| {
+            let mut row = agent_row(snapshot, &pane_id, config, machine)?;
+            row.number = Some(index + 1);
+            Some(row)
+        })
         .collect()
 }
 
@@ -321,6 +329,7 @@ pub(super) fn agent_row(
         status: agent.agent_status,
         focused: agent.focused,
         rows,
+        number: None,
     })
 }
 
@@ -359,9 +368,31 @@ pub(super) fn render_agent_row(
     } else {
         row.rows.clone()
     };
+    let number_style = if row.focused {
+        Style::default().fg(palette.text)
+    } else {
+        Style::default().fg(palette.overlay0)
+    };
     for (index, tokens) in rows.iter().take(rect.height as usize).enumerate() {
-        let indent = if index == 0 { 1 } else { 3 };
-        let mut spans = vec![ratatui::text::Span::raw(" ".repeat(indent))];
+        // The first line leads with the row number, as the collapsed sidebar
+        // does; later lines line up under the first line's text.
+        let (lead, indent) = if index == 0 {
+            // Only `1..9` has keys, and a wider number would touch the text.
+            let number = row
+                .number
+                .filter(|number| *number <= 9)
+                .map(|number| number.to_string());
+            (
+                ratatui::text::Span::styled(
+                    format!("{:<2}", number.unwrap_or_default()),
+                    number_style,
+                ),
+                2,
+            )
+        } else {
+            (ratatui::text::Span::raw("    "), 4)
+        };
+        let mut spans = vec![lead];
         spans.extend(crate::ui::resolved_token_spans(
             tokens,
             icon,

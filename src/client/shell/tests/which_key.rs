@@ -948,6 +948,61 @@ fn next_blocked_agent_runs_from_the_agent_menu_and_the_mobile_header() {
     assert!(state.hits.mobile_blocked.is_empty());
 }
 
+#[test]
+fn agent_menu_digits_focus_the_agent_at_that_row() {
+    let agent = |pane_id: &str, focused| ClientShellAgent {
+        pane_id: pane_id.into(),
+        workspace_id: "ws_1".into(),
+        tab_id: "tab_1".into(),
+        name: Some("pi".into()),
+        display_agent: Some("pi".into()),
+        agent: Some("pi".into()),
+        title: None,
+        terminal_title: None,
+        terminal_title_stripped: None,
+        agent_status: AgentStatus::Idle,
+        state_change_seq: 1,
+        state_labels: Vec::new(),
+        tokens: Vec::new(),
+        focused,
+    };
+    let focused_panes = |outcome: &ClientShellInput| {
+        outcome
+            .actions
+            .iter()
+            .filter_map(|action| match action {
+                ClientShellAction::Endpoint { request, .. } => match &request.method {
+                    crate::api::schema::Method::PaneFocus(params) => Some(params.pane_id.clone()),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let mut state = state_with_which_key(true);
+    let mut projected = snapshot();
+    projected.agents = vec![agent("pane_1", true), agent("pane_2", false)];
+    state.set_snapshot(Box::new(projected));
+    state.set_pane_surface(surface());
+
+    press(&mut state, prefix_key());
+    press(&mut state, plain_key(crossterm::event::KeyCode::Char('a')));
+    let hint = state.key_hint.as_ref().expect("agent menu hint");
+    assert!(hint
+        .bindings
+        .iter()
+        .any(|(label, description)| label == "1..9" && description == "focus agent"));
+    let pressed = press(&mut state, plain_key(crossterm::event::KeyCode::Char('2')));
+    assert_eq!(focused_panes(&pressed), ["pane_2"]);
+    assert_ne!(state.mode, ClientShellMode::Prefix);
+
+    press(&mut state, prefix_key());
+    press(&mut state, plain_key(crossterm::event::KeyCode::Char('a')));
+    let missing = press(&mut state, plain_key(crossterm::event::KeyCode::Char('3')));
+    assert!(focused_panes(&missing).is_empty());
+    assert!(pane_key_codes(&missing).is_empty());
+}
+
 /// A tap presses the row's key label, so every label naming one key must
 /// parse back to a key its menu resolves.
 #[test]

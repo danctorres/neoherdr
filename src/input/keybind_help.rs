@@ -143,13 +143,7 @@ pub(crate) fn group_menu_entries(
     group: &str,
     keep: impl Fn(&crate::config::KeyGroupAction) -> bool,
 ) -> Vec<KeybindHelpEntry> {
-    let members = keybinds
-        .groups
-        .iter()
-        .filter(|candidate| candidate.id == group)
-        .flat_map(|group| group.members.iter())
-        .filter(|member| keep(&member.action))
-        .collect::<Vec<_>>();
+    let members = super::keybindings::group_member_rows(keybinds, group, keep);
     let four_way = |action: &crate::config::KeyGroupAction| match action {
         crate::config::KeyGroupAction::Builtin(action) => DIRECTION_SETS
             .iter()
@@ -157,21 +151,21 @@ pub(crate) fn group_menu_entries(
         _ => None,
     };
     let mut entries = Vec::new();
-    for (index, member) in members.iter().enumerate() {
-        let Some(&(set, description)) = four_way(&member.action) else {
-            entries.push((member.label.clone(), member.description.clone()));
+    for (index, (label, member_description, action)) in members.iter().enumerate() {
+        let Some(&(set, description)) = four_way(action) else {
+            entries.push((label.clone(), member_description.clone()));
             continue;
         };
         let in_set = |action: &crate::config::KeyGroupAction| {
             four_way(action).is_some_and(|(other, _)| *other == set)
         };
-        if members[..index].iter().any(|other| in_set(&other.action)) {
+        if members[..index].iter().any(|(_, _, other)| in_set(other)) {
             continue;
         }
         let labels = members
             .iter()
-            .filter(|other| in_set(&other.action))
-            .map(|other| other.label.clone())
+            .filter(|(_, _, other)| in_set(other))
+            .map(|(label, _, _)| label.clone())
             .collect::<Vec<_>>();
         entries.push((join_direction_labels(&labels), Cow::Borrowed(description)));
     }

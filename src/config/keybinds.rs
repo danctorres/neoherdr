@@ -1127,15 +1127,43 @@ fn append_custom_command_bindings(
                 "custom command",
             ),
         };
+        let description = command
+            .description
+            .clone()
+            .map(Cow::Owned)
+            .unwrap_or(Cow::Borrowed(default_description));
+        // An indexed action becomes one entry per digit key, each running the
+        // action for the item that digit numbers.
+        if let Some(indexed) = builtin_action.filter(|action| action.with_index(0).is_some()) {
+            for binding in bindings.bindings {
+                let KeyCode::Char(digit @ '1'..='9') = binding.trigger.combo().0 else {
+                    diagnostic(
+                        diagnostics,
+                        format!(
+                            "indexed keybinding must use 1..9: {key_field} = {:?}; disabling binding",
+                            binding.label
+                        ),
+                    );
+                    continue;
+                };
+                let index = (digit as usize) - ('1' as usize);
+                members.push(MenuEntry {
+                    group: group.to_owned(),
+                    keys: ActionKeybinds {
+                        bindings: vec![binding],
+                    },
+                    action: KeyGroupAction::Builtin(indexed.with_index(index).unwrap_or(indexed)),
+                    description: description.clone(),
+                    source,
+                });
+            }
+            continue;
+        }
         members.push(MenuEntry {
             group: group.to_owned(),
             keys: bindings.clone(),
             action: menu_action,
-            description: command
-                .description
-                .clone()
-                .map(Cow::Owned)
-                .unwrap_or(Cow::Borrowed(default_description)),
+            description,
             source,
         });
         if builtin_action.is_none() {
