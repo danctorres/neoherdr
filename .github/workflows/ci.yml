@@ -40,7 +40,10 @@ jobs:
 
       - name: Validate commit subjects
         if: github.event_name == 'push'
-        run: python3 scripts/conventional_commits.py --range "${{ github.event.before }}..${{ github.event.after }}"
+        # neoherdr: check every commit on top of upstream; a rebase force-push drops `before`.
+        run: |
+          git fetch --no-tags https://github.com/herdrdev/herdr.git master
+          python3 scripts/conventional_commits.py --range "FETCH_HEAD..${{ github.event.after }}"
 
       - name: Validate PR title
         if: github.event_name == 'pull_request'
